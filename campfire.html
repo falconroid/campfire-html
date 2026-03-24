@@ -236,7 +236,10 @@
                 <!-- Input chip toolbar -->
                 <div class="flex items-center gap-2 pl-0.5">
                     <button id="searchChip" title="联网搜索 — 在设置中配置搜索模型" class="input-chip">🌐 联网</button>
+                    <button id="attachBtn" title="附加文件 (.txt, .md, .json, .csv 等)" class="input-chip">📎 附件</button>
+                    <input type="file" id="attachInput" class="hidden" accept=".txt,.md,.markdown,.json,.csv,.xml,.html,.htm,.js,.ts,.py,.java,.c,.cpp,.h,.css,.yaml,.yml,.toml,.ini,.cfg,.log,.sql,.sh,.bat,.ps1,.r,.go,.rs,.rb,.php,.swift,.kt" multiple>
                 </div>
+                <div id="attachedFiles" class="flex flex-wrap gap-1.5 pl-0.5 empty:hidden"></div>
             </div>
         </section>
 
@@ -420,7 +423,7 @@
             models: {
                 alpha: 'claude-opus-4-6',
                 beta: 'gpt-5.4',
-                scan: 'minimax-m2.5-private',
+                scan: 'kimi-k2.5',
                 judge: 'gemini-3.1-pro-preview',
                 search: 'gpt-5.4'
             },
@@ -808,7 +811,20 @@
         // ==========================================
         function handleIgnite() {
             const inputArea = document.getElementById('userInput');
-            const userInput = inputArea.value;
+            let userInput = inputArea.value;
+            if (!userInput.trim() && _attachedFiles.length === 0) return;
+
+            // Prepend attached file contents
+            if (_attachedFiles.length > 0) {
+                const fileContext = _attachedFiles.map(f => `--- 文件: ${f.name} ---\n${f.content}`).join('\n\n');
+                userInput = userInput.trim()
+                    ? `${fileContext}\n\n--- 用户提问 ---\n${userInput}`
+                    : fileContext;
+                // Archive files to vault
+                saveFilesToVault(_attachedFiles);
+                _attachedFiles.length = 0;
+                renderAttachedFiles();
+            }
             if (!userInput.trim()) return;
 
             const isCampfire = document.getElementById('modeToggle').checked;
@@ -2233,6 +2249,101 @@
         });
         updateSearchChip();
 
+        // File attachment
+        const _attachedFiles = []; // {name, size, content}
+        document.getElementById('attachBtn').addEventListener('click', async () => {
+            // Show vault files picker if vault is mounted
+            const vaultFiles = await loadVaultFiles();
+            if (vaultFiles.length > 0) {
+                const existing = document.getElementById('vaultFilePicker');
+                if (existing) { existing.remove(); return; }
+                const picker = document.createElement('div');
+                picker.id = 'vaultFilePicker';
+                picker.style.cssText = 'position:absolute;bottom:100%;left:0;background:#111;border:1px solid #333;border-radius:8px;padding:6px;margin-bottom:4px;max-height:200px;overflow-y:auto;min-width:220px;z-index:20;';
+                picker.innerHTML = `<div class="text-[9px] text-gray-500 uppercase tracking-widest mb-2 px-1">档案库文件</div>`
+                    + vaultFiles.map(name => `<div class="vault-file-item text-xs text-gray-400 hover:text-orange-400 hover:bg-gray-900 px-2 py-1 rounded cursor-pointer transition" data-name="${name}">📄 ${name}</div>`).join('')
+                    + `<div class="border-t border-gray-800 mt-2 pt-2 px-1"><button class="attach-local-btn text-[10px] text-gray-500 hover:text-white transition">📂 从电脑选择新文件...</button></div>`;
+                document.getElementById('attachBtn').parentElement.style.position = 'relative';
+                document.getElementById('attachBtn').parentElement.appendChild(picker);
+                picker.addEventListener('click', async (ev) => {
+                    if (ev.target.classList.contains('vault-file-item')) {
+                        const name = ev.target.getAttribute('data-name');
+                        if (_attachedFiles.some(f => f.name === name)) { picker.remove(); return; }
+                        try {
+                            const dir = await getFilesDir();
+                            const fh = await dir.getFileHandle(name);
+                            const file = await fh.getFile();
+                            const content = await file.text();
+                            _attachedFiles.push({ name, size: file.size, content });
+                            renderAttachedFiles();
+                        } catch(e) { showToast('读取失败'); }
+                        picker.remove();
+                    }
+                    if (ev.target.classList.contains('attach-local-btn')) {
+                        picker.remove();
+                        document.getElementById('attachInput').click();
+                    }
+                });
+                // Close on outside click
+                setTimeout(() => document.addEventListener('click', function closer(ev) {
+                    if (!picker.contains(ev.target) && ev.target.id !== 'attachBtn') { picker.remove(); document.removeEventListener('click', closer); }
+                }), 10);
+            } else {
+                document.getElementById('attachInput').click();
+            }
+        });
+        document.getElementById('attachInput').addEventListener('change', async (e) => {
+            const files = Array.from(e.target.files);
+            for (const file of files) {
+                if (file.size > 500 * 1024) {
+                    showToast(`${file.name} 超过 500KB，已跳过`);
+                    continue;
+                }
+                if (_attachedFiles.some(f => f.name === file.name)) continue;
+                try {
+                    const content = await file.text();
+                    _attachedFiles.push({ name: file.name, size: file.size, content });
+                } catch(err) { showToast(`${file.name} 读取失败`); }
+            }
+            e.target.value = '';
+            renderAttachedFiles();
+        });
+
+        function renderAttachedFiles() {
+            const container = document.getElementById('attachedFiles');
+            container.innerHTML = _attachedFiles.map((f, i) =>
+                `<span class="inline-flex items-center gap-1 bg-gray-900 border border-gray-700 rounded-full px-2 py-0.5 text-[10px] text-gray-400">
+                    📄 ${f.name} <span class="text-gray-600">(${(f.size/1024).toFixed(1)}KB)</span>
+                    <button class="attach-remove-btn text-gray-600 hover:text-red-400 ml-0.5" data-idx="${i}">✕</button>
+                </span>`
+            ).join('');
+        }
+        document.getElementById('attachedFiles').addEventListener('click', (e) => {
+            if (e.target.classList.contains('attach-remove-btn')) {
+                _attachedFiles.splice(parseInt(e.target.getAttribute('data-idx')), 1);
+                renderAttachedFiles();
+            }
+        });
+
+        // Drag-and-drop file support on input area
+        const _inputArea = document.getElementById('userInput');
+        _inputArea.addEventListener('dragover', (e) => { e.preventDefault(); _inputArea.style.borderColor = '#f97316'; });
+        _inputArea.addEventListener('dragleave', () => { _inputArea.style.borderColor = ''; });
+        _inputArea.addEventListener('drop', async (e) => {
+            e.preventDefault();
+            _inputArea.style.borderColor = '';
+            const files = Array.from(e.dataTransfer.files);
+            for (const file of files) {
+                if (file.size > 500 * 1024) { showToast(`${file.name} 超过 500KB，已跳过`); continue; }
+                if (_attachedFiles.some(f => f.name === file.name)) continue;
+                try {
+                    const content = await file.text();
+                    _attachedFiles.push({ name: file.name, size: file.size, content });
+                } catch(err) { showToast(`${file.name} 读取失败`); }
+            }
+            renderAttachedFiles();
+        });
+
         // History panel
         const historyPanel = document.getElementById('historyPanel');
         document.getElementById('toggleHistory').onclick = async () => {
@@ -2465,6 +2576,35 @@
         });
 
         // Export buttons (session-contextual)
+        async function getFilesDir() {
+            if (!vaultHandle) return null;
+            try { return await vaultHandle.getDirectoryHandle('files', { create: true }); }
+            catch(e) { return null; }
+        }
+
+        async function saveFilesToVault(files) {
+            const dir = await getFilesDir();
+            if (!dir) return;
+            for (const f of files) {
+                try {
+                    const fh = await dir.getFileHandle(f.name, { create: true });
+                    const w = await fh.createWritable(); await w.write(f.content); await w.close();
+                } catch(e) {}
+            }
+        }
+
+        async function loadVaultFiles() {
+            const dir = await getFilesDir();
+            if (!dir) return [];
+            const files = [];
+            try {
+                for await (const entry of dir.values()) {
+                    if (entry.kind === 'file') files.push(entry.name);
+                }
+            } catch(e) {}
+            return files.sort();
+        }
+
         async function getExportsDir() {
             if (!vaultHandle) return null;
             try { return await vaultHandle.getDirectoryHandle('exports', { create: true }); }
@@ -2565,6 +2705,12 @@
         // v6.0 Workspace model: create initial empty session on page load
         const initialSession = createSession('', true, 3, true);
         switchToSession(initialSession.id);
+
+        // First-time setup: auto-open settings if no API key configured
+        if (!config.apiKey) {
+            document.getElementById('settingsPanel').classList.add('open');
+            showToast('首次使用，请先配置 API 地址和 Key');
+        }
     </script>
 </body>
 </html>
