@@ -10,7 +10,7 @@
 
 ## 快速开始
 
-1. 浏览器打开 `campfire6.0.html`（推荐 Chrome/Edge）
+1. 浏览器打开 `campfire.html`（推荐 Chrome/Edge）
 2. 点右上角 `⚙ 设置`，填写 API 地址和 Key，点 `⚡ 测试` 确认连接
 3. 关闭设置面板（自动保存）
 4. 输入问题，按 **Enter** 开始
