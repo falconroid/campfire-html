@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>Campfire 历史索引生成器</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { background: #050505; color: #d1d1d1; font-family: ui-sans-serif, system-ui, sans-serif; }
+        .log-line { font-size: 12px; font-family: ui-monospace, monospace; padding: 2px 0; }
+        .log-line.ok { color: #22c55e; }
+        .log-line.skip { color: #666; }
+        .log-line.err { color: #ef4444; }
+        .log-line.info { color: #f59e0b; }
+    </style>
+</head>
+<body class="p-8 max-w-2xl mx-auto">
+    <h1 class="text-xl font-black text-orange-500 uppercase tracking-widest mb-2">Campfire 历史索引生成器</h1>
+    <p class="text-xs text-gray-500 mb-6">一次性工具：扫描档案库中的历史会话，提取关键词并写入记忆索引（<code>_memory_index.json</code>），供主程序跨对话调用。</p>
+
+    <div class="space-y-4 mb-6">
+        <div>
+            <label class="block text-[10px] text-gray-400 uppercase tracking-widest mb-1">API 地址</label>
+            <input type="text" id="baseUrl" class="w-full bg-black border border-gray-800 p-2 rounded text-xs text-white" placeholder="留空则从主程序配置读取">
+        </div>
+        <div>
+            <label class="block text-[10px] text-gray-400 uppercase tracking-widest mb-1">API Key</label>
+            <input type="password" id="apiKey" class="w-full bg-black border border-gray-800 p-2 rounded text-xs text-white" placeholder="留空则从主程序配置读取">
+        </div>
+        <div>
+            <label class="block text-[10px] text-gray-400 uppercase tracking-widest mb-1">提取模型</label>
+            <input type="text" id="model" class="w-full bg-black border border-gray-800 p-2 rounded text-xs text-white" value="minimax-m2.5-private" placeholder="用于提取关键词的模型">
+        </div>
+    </div>
+
+    <div class="flex gap-3 mb-6">
+        <button id="startBtn" class="bg-orange-600 hover:bg-orange-500 px-6 py-2 rounded font-bold text-black text-sm transition">选择档案库并开始</button>
+        <button id="clearBtn" class="bg-gray-900 hover:bg-gray-800 px-4 py-2 rounded text-xs text-gray-400 border border-gray-700 transition">清空索引</button>
+    </div>
+
+    <div id="status" class="text-xs text-gray-500 mb-3"></div>
+    <div id="log" class="bg-black border border-gray-800 rounded p-4 h-[400px] overflow-y-auto space-y-0.5"></div>
+
+    <div class="mt-4 flex justify-between items-center">
+        <span id="indexCount" class="text-[10px] text-gray-600"></span>
+        <button id="exportBtn" class="text-[10px] text-gray-500 hover:text-white border border-gray-700 px-3 py-1 rounded transition hidden">导出索引 JSON</button>
+    </div>
+
+<script>
+    const log = document.getElementById('log');
+    const statusEl = document.getElementById('status');
+    let vaultHandle = null;
+    let sessionsDir = null;
+    let memoryIndex = [];
+
+    function addLog(text, cls = '') {
+        const d = document.createElement('div');
+        d.className = 'log-line ' + cls;
+        d.textContent = text;
+        log.appendChild(d);
+        log.scrollTop = log.scrollHeight;
+    }
+
+    function getConfig() {
+        let baseUrl = document.getElementById('baseUrl').value.trim();
+        let apiKey = document.getElementById('apiKey').value.trim();
+        const model = document.getElementById('model').value.trim() || 'minimax-m2.5-private';
+        if (!baseUrl || !apiKey) {
+            try {
+                const saved = JSON.parse(localStorage.getItem('campfire_secrets'));
+                if (saved) {
+                    if (!baseUrl) baseUrl = saved.baseUrl || '';
+                    if (!apiKey) apiKey = saved.apiKey || '';
+                }
+            } catch(e) {}
+        }
+        return { baseUrl, apiKey, model };
+    }
+
+    async function loadIndex() {
+        if (!vaultHandle) return [];
+        try {
+            const fh = await vaultHandle.getFileHandle('memory.json');
+            const file = await fh.getFile();
+            return JSON.parse(await file.text());
+        } catch(e) { return []; }
+    }
+
+    async function saveIndex(index) {
+        if (index.length > 100) index = index.slice(-100);
+        memoryIndex = index;
+        if (!vaultHandle) return;
+        try {
+            const fh = await vaultHandle.getFileHandle('memory.json', { create: true });
+            const w = await fh.createWritable();
+            await w.write(JSON.stringify(index, null, 2));
+            await w.close();
+        } catch(e) { addLog('索引写入失败: ' + e.message, 'err'); }
+    }
+
+    function updateCount() {
+        const el = document.getElementById('indexCount');
+        el.textContent = `当前索引: ${memoryIndex.length} 条`;
+        document.getElementById('exportBtn').classList.toggle('hidden', memoryIndex.length === 0);
+    }
+
+    async function extractKeywords(config, synthesis) {
+        const resp = await fetch(`${config.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${config.apiKey}` },
+            body: JSON.stringify({
+                model: config.model,
+                messages: [{ role: 'user', content: `从以下文本中提取5-8个关键词和一句话概括(20字内)。严格按JSON输出，不要其他内容：{"keywords":["词1","词2"],"gist":"一句话概括"}\n\n${synthesis.substring(0, 2000)}` }],
+                temperature: 0, max_tokens: 200, stream: false
+            })
+        });
+        const data = await resp.json();
+        const raw = data.choices?.[0]?.message?.content || '';
+        const jsonMatch = raw.match(/\{[\s\S]*\}/);
+        if (!jsonMatch) throw new Error('模型未返回有效 JSON');
+        return JSON.parse(jsonMatch[0]);
+    }
+
+    document.getElementById('startBtn').onclick = async () => {
+        const config = getConfig();
+        if (!config.baseUrl || !config.apiKey) {
+            addLog('错误：请填写 API 地址和 Key，或确保主程序已保存过配置', 'err');
+            return;
+        }
+
+        try {
+            vaultHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
+        } catch(e) {
+            addLog('已取消选择', 'skip');
+            return;
+        }
+
+        addLog(`已选择目录: ${vaultHandle.name}`, 'info');
+        addLog(`使用模型: ${config.model}`, 'info');
+        addLog(`索引将写入: ${vaultHandle.name}/memory.json`, 'info');
+
+        // Load existing index from vault
+        memoryIndex = await loadIndex();
+        addLog(`已有索引 ${memoryIndex.length} 条`, 'info');
+        updateCount();
+
+        // Read sessions from sessions/ subfolder
+        try {
+            sessionsDir = await vaultHandle.getDirectoryHandle('sessions');
+        } catch(e) {
+            addLog('错误：未找到 sessions/ 文件夹，请先将 Campfire_*.json 文件放入 sessions/ 子目录', 'err');
+            return;
+        }
+
+        const files = [];
+        for await (const entry of sessionsDir.values()) {
+            if (entry.kind === 'file' && entry.name.endsWith('.json')) files.push(entry);
+        }
+        files.sort((a, b) => a.name.localeCompare(b.name));
+        addLog(`找到 ${files.length} 个会话文件`, 'info');
+        addLog('---', '');
+
+        if (files.length === 0) return;
+
+        const existingIds = new Set(memoryIndex.map(e => e.id));
+        let processed = 0, skipped = 0, failed = 0;
+
+        document.getElementById('startBtn').disabled = true;
+        document.getElementById('startBtn').textContent = '处理中...';
+
+        for (let i = 0; i < files.length; i++) {
+            const fileHandle = files[i];
+            statusEl.textContent = `进度: ${i + 1} / ${files.length}`;
+            try {
+                const file = await fileHandle.getFile();
+                const text = await file.text();
+                const data = JSON.parse(text);
+
+                if (!data.id || !data.last_synthesis || data.last_synthesis.length < 50) {
+                    addLog(`${fileHandle.name} — 无综合结论，跳过`, 'skip');
+                    skipped++;
+                    continue;
+                }
+
+                if (existingIds.has(data.id)) {
+                    addLog(`${fileHandle.name} — 已在索引中，跳过`, 'skip');
+                    skipped++;
+                    continue;
+                }
+
+                const parsed = await extractKeywords(config, data.last_synthesis);
+                memoryIndex.push({
+                    id: data.id,
+                    title: data.title || fileHandle.name,
+                    keywords: parsed.keywords || [],
+                    gist: parsed.gist || '',
+                    synthesis: data.last_synthesis.substring(0, 1500),
+                    timestamp: parseInt(data.id) || Date.now()
+                });
+                existingIds.add(data.id);
+                addLog(`${fileHandle.name} — ✓ 关键词: ${(parsed.keywords || []).join(', ')}`, 'ok');
+                processed++;
+
+                // Save after each entry (resume-safe)
+                await saveIndex(memoryIndex);
+                updateCount();
+
+                if (i < files.length - 1) await new Promise(r => setTimeout(r, 300));
+
+            } catch(e) {
+                addLog(`${fileHandle.name} — ✕ ${e.message}`, 'err');
+                failed++;
+            }
+        }
+
+        addLog('', '');
+        addLog(`完成！处理 ${processed} 条，跳过 ${skipped} 条，失败 ${failed} 条`, 'info');
+        addLog(`索引总计 ${memoryIndex.length} 条，已写入 ${vaultHandle.name}/memory.json`, 'info');
+        statusEl.textContent = '完成';
+        document.getElementById('startBtn').disabled = false;
+        document.getElementById('startBtn').textContent = '选择档案库并开始';
+        updateCount();
+    };
+
+    document.getElementById('clearBtn').onclick = async () => {
+        if (!confirm('确认清空记忆索引？')) return;
+        if (!vaultHandle) {
+            try { vaultHandle = await window.showDirectoryPicker({ mode: 'readwrite' }); }
+            catch(e) { return; }
+        }
+        memoryIndex = [];
+        await saveIndex([]);
+        addLog('索引已清空', 'info');
+        updateCount();
+    };
+
+    document.getElementById('exportBtn').onclick = () => {
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(new Blob([JSON.stringify(memoryIndex, null, 2)], { type: 'application/json' }));
+        a.download = 'campfire_memory_index.json';
+        a.click();
+    };
+
+    updateCount();
+</script>
+</body>
+</html>

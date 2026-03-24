@@ -1,0 +1,2570 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>Campfire Cockpit v6.6</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <style>
+        body { background-color: #050505; color: #D1D1D1; font-family: ui-sans-serif, system-ui, -apple-system, sans-serif; }
+        .crucible-log { height: calc(100vh - 250px); overflow-y: auto; scroll-behavior: auto; }
+        .blueprint-render { height: calc(100vh - 250px); overflow-y: auto; scroll-behavior: smooth; }
+        .blueprint-render .prose { font-size: 0.8125rem; line-height: 1.6; }
+        .blueprint-render .prose h2 { font-size: 0.9375rem; }
+        .blueprint-render .prose h3 { font-size: 0.875rem; }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-thumb { background: #333; border-radius: 10px; }
+
+        .settings-panel { transform: translateX(100%); transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+        .settings-panel.open { transform: translateX(0); }
+        .history-panel { transform: translateX(-100%); transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+        .history-panel.open { transform: translateX(0); }
+
+        .stream-box { background: #000; padding: 14px; border-radius: 8px; border: 1px solid #222; margin-top: 10px; white-space: pre-wrap; font-size: 0.875rem !important; color: #bbb; line-height: 1.6; position: relative; }
+
+        .prose table { display: table !important; width: 100% !important; border-collapse: collapse !important; margin: 1rem 0 !important; background-color: #0c0c0c !important; border: 1px solid #333 !important; font-size: 0.85rem; }
+        .prose th, .prose td { border: 1px solid #333 !important; padding: 8px !important; text-align: left; }
+
+        .prose h1 { color: #F97316; font-size: 1.6rem; font-weight: 900; border-bottom: 2px solid #333; padding-bottom: 0.6rem; margin-top: 0; }
+        .prose h2 { color: #E5E5E5; font-size: 1.3rem; font-weight: 800; margin-top: 2rem; border-left: 5px solid #F97316; padding-left: 12px; }
+        .prose h3 { color: #A3A3A3; font-size: 1.1rem; font-weight: 700; margin-top: 1.5rem; }
+        .prose strong { color: #fff; font-weight: 800; }
+        .prose ul { margin-top: 0.5rem; margin-bottom: 1rem; list-style-type: square; padding-left: 1.2rem; }
+        .prose li { margin-bottom: 0.4rem; }
+        .prose p { margin-bottom: 1rem; }
+        .prose code { color: #F97316; background: #1a1a1a; padding: 2px 5px; border-radius: 4px; font-size: 0.9em; }
+
+        #userInput { resize: none; }
+        #userInput::-webkit-scrollbar { width: 4px; }
+        .toggle-checkbox:checked { right: 0; border-color: #F97316; }
+        .toggle-checkbox:checked + .toggle-label { background-color: #F97316; }
+
+
+        /* v6.0: Tab strip */
+        #tabStrip { width: 130px; min-width: 130px; background: #080808; border-right: 1px solid #1a1a1a; display: flex; flex-direction: column; padding-top: 8px; gap: 4px; overflow-y: auto; overflow-x: hidden; padding: 8px 6px; }
+        #tabStrip::-webkit-scrollbar { width: 3px; }
+        .session-tab { width: 100%; height: auto; border-radius: 8px; display: flex; flex-direction: column; cursor: pointer; position: relative; font-size: 14px; font-weight: 900; transition: all 0.2s; border: 1px solid transparent; flex-shrink: 0; padding: 6px 8px; gap: 2px; }
+        .session-tab.active { border-color: #F97316; box-shadow: 0 0 12px rgba(249,115,22,0.3); }
+        .session-tab.queued { background: #1a1a1a; color: #666; }
+        .session-tab.running { background: #2d1800; color: #F97316; }
+        .session-tab.complete { background: #002200; color: #22c55e; }
+        .session-tab.failed { background: #220000; color: #ef4444; }
+        .session-tab.interrupted { background: #1a1000; color: #f59e0b; }
+        .session-tab .tab-badge { font-size: 9px; font-weight: 700; opacity: 0.7; }
+        .session-tab .tab-title { font-size: 10px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: inherit; }
+        .session-tab .tab-timer { font-size: 9px; font-family: ui-monospace, monospace; opacity: 0.5; }
+        .session-tab.queued .tab-badge { color: #999; }
+        .session-tab.running .tab-badge { color: #F97316; }
+        .session-tab.complete .tab-badge { color: #22c55e; }
+        .session-tab.failed .tab-badge { color: #ef4444; }
+        .session-tab.interrupted .tab-badge { color: #f59e0b; }
+        @keyframes pulse-badge { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+        /* v6.0: Session container show/hide */
+        .session-log-container, .session-render-container { display: none; height: 100%; }
+        .session-log-container.active-session, .session-render-container.active-session { display: flex; flex-direction: column; }
+
+        /* v6.0: Right panel sub-tabs - REMOVED in v6.0 simplification */
+
+        /* v6.0: Pinnable blocks */
+        .pinnable-block { position: relative; padding: 16px; margin-bottom: 12px; background: #0c0c0c; border: 1px solid #1a1a1a; border-radius: 8px; }
+
+        /* v6.2: Pinned excerpts in right panel */
+        .pinned-excerpt { border-left: 3px solid #1e3a5f; }
+        .pinned-excerpt .pinned-body { background: #060c18; border: 1px solid rgba(59,130,246,0.2); padding: 16px; border-radius: 0 8px 8px 8px; }
+
+        /* v6.4: Input chip toolbar */
+        .input-chip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 999px; border: 1px solid #374151; background: transparent; color: #6b7280; font-size: 10px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; cursor: pointer; transition: all 0.15s; user-select: none; }
+        .input-chip:hover { border-color: #4b5563; color: #9ca3af; }
+        .input-chip.active { border-color: #0e7490; background: rgba(8,145,178,0.12); color: #22d3ee; }
+        .input-chip.active:hover { background: rgba(8,145,178,0.2); }
+        .input-chip.disabled { opacity: 0.35; cursor: default; }
+
+        /* v6.2: Crucible log icon buttons (top-right of stream box, hover-visible) */
+        .log-btn-bar { position: absolute; top: 6px; right: 6px; display: flex; gap: 3px; opacity: 0; transition: opacity 0.15s; z-index: 2; }
+        .stream-box:hover .log-btn-bar { opacity: 1; }
+        .log-copy-btn, .log-pin-btn { width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; background: rgba(10,10,10,0.85); border: 1px solid #333; border-radius: 4px; cursor: pointer; font-size: 13px; color: #666; transition: all 0.15s; padding: 0; line-height: 1; }
+        .log-copy-btn:hover { color: #ccc; border-color: #555; }
+        .log-pin-btn:hover { color: #F97316; border-color: #F97316; }
+
+        /* v6.0: Resize handle between panels */
+        .resize-handle {
+            width: 4px;
+            cursor: col-resize;
+            background: transparent;
+            transition: background 0.2s;
+            flex-shrink: 0;
+        }
+        .resize-handle:hover, .resize-handle:active {
+            background: #F97316;
+        }
+
+        /* Cancel button for running sessions */
+        .cancel-session-btn { font-size: 9px; color: #ef4444; background: #1a0000; border: 1px solid #440000; padding: 2px 8px; border-radius: 4px; cursor: pointer; margin-left: 8px; }
+        .cancel-session-btn:hover { background: #330000; }
+
+        /* v6.0: Tab close button */
+        .tab-close-btn {
+            position: absolute;
+            top: 2px;
+            right: 2px;
+            font-size: 10px;
+            color: #666;
+            cursor: pointer;
+            display: none;
+            background: #1a1a1a;
+            border-radius: 50%;
+            width: 14px;
+            height: 14px;
+            line-height: 14px;
+            text-align: center;
+            z-index: 5;
+        }
+        .session-tab:hover .tab-close-btn {
+            display: block;
+        }
+        .tab-close-btn:hover {
+            color: #ef4444;
+            background: #330000;
+        }
+
+        /* v6.0: Collapsible stream boxes */
+        .stream-collapse-wrapper.collapsed .stream-box {
+            max-height: 4.5em;
+            overflow: hidden;
+            mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
+            -webkit-mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
+        }
+        .stream-collapse-toggle {
+            display: block;
+            width: 100%;
+            text-align: center;
+            padding: 4px;
+            background: transparent;
+            border: none;
+            color: #666;
+            font-size: 11px;
+            cursor: pointer;
+            margin-top: 2px;
+        }
+        .stream-collapse-toggle:hover {
+            color: #F97316;
+        }
+
+        /* v6.0: Workspace empty tab */
+        .session-tab.empty { background: #111; color: #555; }
+        .session-tab.empty .tab-badge { color: #555; }
+    </style>
+</head>
+<body class="px-2 py-2 overflow-hidden flex flex-col h-screen">
+
+    <header class="flex items-center justify-between pb-3 border-b border-gray-800 mb-3 shrink-0">
+        <div class="flex items-center gap-3">
+            <button id="toggleHistory" class="flex items-center justify-center bg-gray-900 hover:bg-gray-800 text-gray-400 hover:text-white border border-gray-700 transition-all rounded px-3 py-1.5 text-xs font-black uppercase tracking-widest shadow-inner">
+                ☰ 档案库
+            </button>
+            <button id="newSessionBtn" class="flex items-center justify-center bg-orange-900/20 hover:bg-orange-900/40 text-orange-500 border border-orange-900/50 transition-all rounded px-3 py-1.5 text-xs font-black uppercase tracking-widest shadow-inner">
+                ➕ New
+            </button>
+            <div class="flex items-center gap-2 border-l border-gray-800 pl-4 ml-2">
+                <span id="logoIcon" class="text-2xl animate-pulse text-orange-600">🔥</span>
+                <h1 class="text-xl font-black tracking-tighter text-white uppercase hidden xl:block tracking-widest">Campfire <span class="text-orange-600">v6.6</span></h1>
+            </div>
+        </div>
+
+        <div id="statusCenter" class="hidden flex items-center justify-center shadow-lg transition-opacity duration-300">
+            <span id="liveStatus" class="bg-orange-900/20 text-orange-500 border border-orange-900/50 text-xs font-bold uppercase tracking-widest px-4 py-1.5 rounded-l-md">等待点火</span>
+            <span id="liveTimer" class="bg-gray-900 text-gray-300 border-t border-r border-b border-gray-800 text-xs font-mono font-bold px-4 py-1.5 rounded-r-md">00:00</span>
+            <button id="cancelActiveBtn" class="cancel-session-btn hidden">停止</button>
+        </div>
+
+        <div class="flex gap-4 items-center text-[10px] font-bold text-gray-500 uppercase">
+            <div class="flex items-center gap-2 bg-gray-900 px-3 py-1.5 rounded-lg border border-gray-800 cursor-pointer" id="modeToggleWrapper" title="篝火模式: 双心智博弈 + Scan差分 + Judge合成&#10;极简模式: 单一模型直接输出">
+                <div class="relative inline-block w-8 mr-1 align-middle select-none transition duration-200 ease-in">
+                    <input type="checkbox" name="toggle" id="modeToggle" class="toggle-checkbox absolute block w-4 h-4 rounded-full bg-white border-4 border-gray-700 appearance-none cursor-pointer transition-all duration-300 top-0 left-0 checked:left-4 z-10" checked/>
+                    <label for="modeToggle" class="toggle-label block overflow-hidden h-4 rounded-full bg-gray-700 cursor-pointer transition-colors duration-300"></label>
+                </div>
+                <span id="toggleText" class="text-orange-500 ml-1">篝火模式</span>
+            </div>
+            <div class="flex items-center gap-2 hidden sm:flex" id="roundSelectorWrapper">
+                <span>轮数:</span>
+                <select id="maxRounds" class="bg-gray-900 border border-gray-800 rounded px-2 py-1 outline-none text-orange-500">
+                    <option value="1">1 R</option>
+                    <option value="2">2 R</option>
+                    <option value="3" selected>3 R</option>
+                    <option value="5">5 R</option>
+                </select>
+            </div>
+            <button id="toggleSettings" class="hover:text-white transition border border-gray-800 bg-gray-900 px-4 py-1.5 rounded-lg">⚙ 设置</button>
+        </div>
+    </header>
+
+    <div id="metricsBar" class="hidden shrink-0 flex justify-between items-center bg-orange-950/30 border border-orange-900/50 text-orange-400 text-[10px] font-bold px-4 py-2 rounded-lg mb-4 tracking-widest uppercase shadow-inner">
+        <span class="flex items-center gap-2"><span class="text-green-500 text-sm">●</span> 完成</span>
+        <span id="metricsContent" class="font-mono text-gray-300"></span>
+    </div>
+
+    <main class="flex gap-0 flex-grow overflow-hidden relative">
+
+        <!-- v6.0: History panel overlay (unchanged from v5.2) -->
+        <div id="historyPanel" class="history-panel absolute top-0 left-0 w-full md:w-[350px] h-full bg-[#080808] border-r border-gray-800 z-40 p-4 shadow-2xl flex flex-col">
+            <div class="flex justify-between items-center mb-4 border-b border-gray-800 pb-2 shrink-0">
+                <h2 class="text-sm font-black tracking-widest text-gray-300 uppercase">Vault 物理档案</h2>
+                <button id="closeHistory" class="text-lg hover:text-white transition text-gray-500">✕</button>
+            </div>
+            <div id="drawerVaultStatus" class="text-[10px] text-gray-500 mb-4 p-2 bg-gray-900/50 border border-gray-800 rounded font-mono">
+                当前状态: 未挂载 (请前往 ⚙ 设置 配置)
+            </div>
+            <div id="historyList" class="flex-grow overflow-y-auto space-y-2 pr-2"></div>
+        </div>
+
+        <!-- v6.0: Tab strip (left edge, 48px) -->
+        <div id="tabStrip">
+            <div id="tabList"></div>
+        </div>
+
+        <!-- v6.0: Crucible area (flex-3) -->
+        <section id="crucibleSection" class="flex flex-col gap-4 h-full flex-[3] min-h-0 min-w-0 px-1">
+            <div id="crucibleLogHost" class="crucible-log flex-grow bg-[#0A0A0A] p-4 border border-gray-800 rounded-xl font-mono leading-relaxed shadow-inner overflow-hidden relative">
+                <!-- Session log containers inserted here dynamically -->
+            </div>
+            <div class="flex flex-col gap-1.5 shrink-0">
+                <div class="flex gap-2 items-end">
+                    <textarea id="userInput" rows="2" placeholder="输入意图... (Enter / Ctrl+Enter 点火 | Shift+Enter 换行)" class="flex-grow bg-gray-900/80 p-3 rounded-lg border border-gray-700 focus:border-orange-600 outline-none transition text-white text-sm"></textarea>
+                    <button id="sendBtn" class="bg-orange-600 hover:bg-orange-500 px-8 py-4 rounded-lg font-black transition text-black h-[52px] shadow-lg">IGNITE</button>
+                </div>
+                <!-- Input chip toolbar -->
+                <div class="flex items-center gap-2 pl-0.5">
+                    <button id="searchChip" title="联网搜索 — 在设置中配置搜索模型" class="input-chip">🌐 联网</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- v6.0: Resize handle -->
+        <div id="resizeHandle" class="resize-handle"></div>
+
+        <!-- v6.0: Right panel (flex-2) — session output view -->
+        <section id="rightPanel" class="flex flex-col gap-2 h-full flex-[2] min-h-0 min-w-0">
+            <!-- Session output area -->
+            <div id="sessionRenderHost" class="blueprint-render flex-grow bg-[#050505] p-2 overflow-hidden pr-4 relative">
+                <!-- Session render containers inserted here dynamically -->
+            </div>
+
+            <!-- Export button -->
+            <div id="sessionExportBtns" class="shrink-0 px-2">
+                <button id="exportFullBtn" class="w-full bg-gray-800 hover:bg-gray-700 py-3 rounded-lg text-xs font-bold transition text-gray-300 border border-gray-700">📚 导出完整对话</button>
+            </div>
+        </section>
+    </main>
+
+    <!-- Settings panel (unchanged structure, added concurrency) -->
+    <div id="settingsPanel" class="settings-panel fixed top-0 right-0 w-full md:w-1/2 lg:w-1/3 h-full bg-black border-l border-gray-800 z-50 shadow-2xl overflow-y-auto flex flex-col">
+        <div class="sticky top-0 z-10 bg-black border-b border-gray-800 px-6 pt-5 pb-4">
+            <div class="flex justify-between items-center">
+                <h2 class="text-xl font-black tracking-widest text-orange-500 uppercase">设置</h2>
+                <button id="closeSettings" class="text-2xl hover:text-white transition">✕</button>
+            </div>
+            <div class="flex gap-2 mt-3">
+                <button id="resetDefaultsBtn" class="text-[10px] text-gray-500 hover:text-red-400 border border-gray-700 hover:border-red-900 bg-gray-900/50 px-3 py-1.5 rounded transition">↺ 恢复默认</button>
+                <button id="exportGlobalBtn" class="text-[10px] text-gray-500 hover:text-gray-300 border border-gray-700 bg-gray-900/50 px-3 py-1.5 rounded transition">导出配置</button>
+                <button id="importGlobalBtn" class="text-[10px] text-gray-500 hover:text-gray-300 border border-gray-700 bg-gray-900/50 px-3 py-1.5 rounded transition">导入配置</button>
+            </div>
+        </div>
+        <div class="space-y-6 px-6 py-6 pb-20">
+
+            <div class="bg-purple-900/10 p-4 rounded-lg border border-purple-900/30">
+                <div class="flex justify-between items-center mb-2">
+                    <label class="block text-[10px] font-bold text-purple-400 uppercase tracking-widest">物理存储 (Local Vault)</label>
+                    <button id="mountVaultBtnSetting" class="bg-purple-900/40 hover:bg-purple-900/60 text-purple-300 text-[10px] px-3 py-1 rounded border border-purple-800 transition">📂 挂载目录</button>
+                </div>
+                <div id="settingVaultStatus" class="text-[10px] text-gray-500 font-mono">状态: 未挂载</div>
+            </div>
+
+            <!-- v6.0: Concurrency setting -->
+            <div class="bg-orange-900/10 p-4 rounded-lg border border-orange-900/30">
+                <label class="block text-[10px] font-bold text-orange-400 uppercase tracking-widest mb-2">并发会话 (Concurrency)</label>
+                <div class="flex items-center gap-3">
+                    <select id="maxConcurrency" class="bg-black border border-gray-800 rounded px-3 py-1.5 outline-none text-orange-500 text-xs">
+                        <option value="1">1 (顺序)</option>
+                        <option value="2">2 (并行)</option>
+                        <option value="3" selected>3 (最大)</option>
+                    </select>
+                    <span class="text-[9px] text-gray-600">可同时开多个对话并行分析不同问题</span>
+                </div>
+            </div>
+
+            <div class="bg-gray-900/40 p-4 rounded-lg border border-blue-900/30">
+                <label class="block text-[10px] font-bold text-blue-400 mb-2 uppercase">算力资产 (API & Models)</label>
+                <input type="text" id="baseUrl" class="w-full bg-black p-2 rounded mb-2 border border-gray-800 text-xs text-white" placeholder="API 地址">
+                <div class="flex gap-2 mb-4">
+                    <input type="password" id="apiKey" class="flex-1 bg-black p-2 rounded border border-gray-800 text-xs text-white" placeholder="API Key">
+                    <button id="testConnectionBtn" class="bg-black border border-gray-700 text-[10px] text-gray-500 hover:text-green-400 hover:border-green-900 px-3 rounded transition whitespace-nowrap">⚡ 测试</button>
+                </div>
+                <div class="grid grid-cols-2 gap-2 text-[10px] text-gray-500">
+                    <div><label>Mind 1 ID</label><input type="text" id="modelAlpha" list="modelList" class="w-full bg-black border border-gray-800 p-2 rounded text-blue-300"></div>
+                    <div><label>Mind 2 ID</label><input type="text" id="modelBeta" list="modelList" class="w-full bg-black border border-gray-800 p-2 rounded"></div>
+                    <div><label>Scan ID</label><input type="text" id="modelScan" list="modelList" class="w-full bg-black border border-gray-800 p-2 rounded"></div>
+                    <div><label>Synthesis ID</label><input type="text" id="modelJudge" list="modelList" class="w-full bg-black border border-gray-800 p-2 rounded"></div>
+                </div>
+                <!-- Web search model config -->
+                <div class="mt-3 pt-3 border-t border-gray-800">
+                    <label class="text-[10px] text-gray-400 uppercase tracking-widest block mb-2">🌐 联网搜索模型</label>
+                    <div class="grid grid-cols-[1fr] gap-2 items-center">
+                        <input type="text" id="modelSearch" list="modelList" class="w-full bg-black border border-gray-800 p-2 rounded text-[11px] text-cyan-300" placeholder="搜索模型 ID，如 gpt-4o-search-preview">
+                    </div>
+                </div>
+                <datalist id="modelList"></datalist>
+            </div>
+
+            <div class="space-y-4">
+                <div class="flex justify-between items-end border-b border-gray-800 pb-2">
+                    <label class="block text-[10px] font-bold text-orange-500 uppercase tracking-widest">智力资产 (Prompt Directives)</label>
+                </div>
+                <div><label class="block text-[10px] font-bold text-blue-400 mb-1">Mind 共享指令 (α &amp; β)</label><textarea id="promptAlpha" class="w-full bg-black p-2 rounded border border-gray-800 text-[10px] text-gray-400 h-40 leading-relaxed"></textarea></div>
+                <div><label class="block text-[10px] font-bold text-green-500 mb-1">差分引导指令</label><textarea id="promptScan" class="w-full bg-black p-2 rounded border border-gray-800 text-[10px] text-gray-400 h-40 leading-relaxed"></textarea></div>
+                <div><label class="block text-[10px] font-bold text-orange-500 mb-1">最终合成指令</label><textarea id="promptJudge" class="w-full bg-black p-2 rounded border border-orange-900/30 text-[10px] text-orange-300 h-56 leading-relaxed"></textarea></div>
+            </div>
+
+        </div>
+    </div>
+
+    <input type="file" id="importGlobalInput" class="hidden" accept=".json">
+
+    <script>
+        // ==========================================
+        // 1. V6.0 SYSTEM PROMPTS (unchanged from v5.2)
+        // ==========================================
+        const SYSTEM_PROMPTS = {
+            alpha: `你是协同思辨中的可攻击分析者。给出你最真实的判断——不受角色预设影响，允许被反驳和更新。
+
+单轮输出规则：
+• 第一句话直接给出明确倾向性判断（标注为「可更新假设」），禁止用"这取决于""各有利弊""很复杂"开场
+• 禁止单轮内自我反驳、正反合闭环、多视角平衡综述
+• 只写三类认知部件：
+  **事实**：相对稳固、可直接成立的信息
+  **核心假设**：你的判断成立所依赖的最关键前提
+  **推测**：超出已知事实的延伸判断
+• 最后标注一个"最关键薄弱点"：你的核心假设中最容易被推翻的那个
+• 深度要求：每个认知部件需充分展开论证，不要压缩为一句话。事实要列举关键证据，假设要说明推理链条，推测要解释依据
+• 禁止：开场白（"当然"、"好的"）、总结段、自我评价
+
+若输入包含历史基准或分歧报告，保持开放心态：
+• 若判断被击穿，开头标注「更新」，直接给出新判断并说明哪个前提变了
+• 若仍坚持，必须提供新理由，禁止重复原论点
+• 允许部分更新：某些点改变，某些点坚持`,
+            scan: `你是逻辑差分引擎。接收两个心智的分析（均包含事实/核心假设/推测三层结构），输出结构化差分报告。
+
+严格按此格式输出，禁止添加其他内容：
+
+**事实共识**：[双方共同引用的稳固信息]
+**假设分歧**：[α的核心假设] ↔ [β的核心假设]
+**推测差异**：[各自延伸推断的不同之处]
+**裁决建议**：[Judge应优先检验哪个假设，及理由]
+
+评分标准（基于假设层冲突深度）：
+• 1-3分：假设基本一致，分歧在推测层或表述
+• 4-6分：假设有分歧，但同属一类前提体系
+• 7-10分：核心假设根本对立，基本前提不兼容
+
+[分歧度评分: X/10] — [直接引用α和β各自的核心假设，说明分歧本质]
+
+若分歧的根本原因不是分析差异，而是问题本身的定义、边界或语境模糊导致双方在不同前提下作答，则额外输出（否则不要输出此行）：
+[需要澄清: 用一句话说明需要提问者补充什么具体信息]`,
+            judge: `你是裁决合成器。基于两个心智的论证和差分报告，为用户提供最终可执行的答案。
+
+核心原则：蒸馏，不是拼接。过滤细节噪声，保留最高价值洞见。深度和篇幅由问题复杂度决定，不人为压缩。
+
+按此顺序输出：
+
+## 核心结论
+[直接回答用户的问题/意图，清晰有力]
+
+## 关键洞见
+[从辩论中提炼出的最有价值发现，各自完整表达]
+
+## 遗留分歧
+[若α和β的核心假设存在实质性对立，说明分歧并给出裁决。若无实质分歧则删除此节]
+
+禁止：开场白、"综合以上"等过渡语、Markdown表格`
+        };
+
+        // ==========================================
+        // 2. V6.0 CONFIG & DIRECTIVES
+        // ==========================================
+        const SEARCH_PROMPT = `你是联网搜索助手。根据用户问题，搜索互联网获取最新相关事实。
+输出格式：
+**搜索结论**：[2-3句核心事实，注明信息来源年份]
+**关键数据**：[数字、日期、具体数据点，如有]
+**不确定性**：[搜索结果中相互矛盾或缺失的信息]
+禁止推测和评论，只输出可引用的事实。`;
+
+        const MODEL_REGISTRY = [
+            'claude-opus-4-6',
+            'claude-sonnet-4-6',
+            'claude-sonnet-4-5',
+            'claude-haiku-4-5',
+            'gemini-3.1-pro-preview',
+            'gpt-5.4',
+            'gpt-5.3-chat',
+            'gpt-5.3-codex',
+            'glm-5',
+            'kimi-k2.5',
+            'MiniMax-M2.5',
+            'glm-5-private',
+            'glm-4.7-private',
+            'minimax-m2.5-private',
+            'minimax-m2.1-private',
+        ];
+
+        const CONFIG_DEFAULTS = {
+            models: {
+                alpha: 'claude-opus-4-6',
+                beta: 'gpt-5.4',
+                scan: 'minimax-m2.5-private',
+                judge: 'gemini-3.1-pro-preview',
+                search: 'gpt-5.4'
+            },
+            searchEnabled: false
+        };
+        let config = { ...CONFIG_DEFAULTS };
+        try {
+            const _savedCfg = JSON.parse(localStorage.getItem('campfire_secrets'));
+            if (_savedCfg) config = { ...CONFIG_DEFAULTS, ..._savedCfg, models: { ...CONFIG_DEFAULTS.models, ...(_savedCfg.models || {}) } };
+        } catch(e) {}
+        // Restore searchEnabled from dedicated key (survives config rebuilds)
+        try { const _se = localStorage.getItem('campfire_search_on'); if (_se !== null) config.searchEnabled = _se === '1'; } catch(e) {}
+        let directives = { ...SYSTEM_PROMPTS };
+        try {
+            const _savedDir = JSON.parse(localStorage.getItem('campfire_directives_v5_2'));
+            if (_savedDir) directives = { ...SYSTEM_PROMPTS, ..._savedDir };
+        } catch(e) {}
+
+        // ==========================================
+        // 3. V6.0 SESSION MANAGER (replaces global currentSessionData)
+        // ==========================================
+        const sessionManager = {
+            sessions: new Map(),
+            activeSessionId: null,
+            sessionQueue: [],
+            runningSessions: new Set(),
+            maxConcurrency: 3,
+            sessionCounter: 0,
+        };
+
+        // Load saved concurrency
+        try {
+            const savedConc = parseInt(localStorage.getItem('campfire_concurrency'));
+            if (savedConc >= 1 && savedConc <= 3) sessionManager.maxConcurrency = savedConc;
+        } catch(e) {}
+
+        function createSession(userInput, isCampfire, maxRounds, isEmpty) {
+            const id = Date.now().toString() + '_' + (++sessionManager.sessionCounter);
+            const title = isEmpty ? '新工作区' : (userInput.substring(0, 15) + (userInput.length > 15 ? '...' : ''));
+
+            const session = {
+                id,
+                title,
+                userInput: userInput || '',
+                isCampfire: isCampfire !== undefined ? isCampfire : true,
+                maxRounds: maxRounds || 3,
+                status: isEmpty ? 'empty' : 'queued',      // empty | queued | running | complete | failed
+                phase: isEmpty ? '就绪' : '排队中',
+                data: {
+                    id: null,
+                    title,
+                    timestamp: '',
+                    last_synthesis: '',
+                    full_conversation: '# Campfire 推演账本\n\n',
+                    simple_history: [],
+                    rawMarkdownMap: {},
+                    blocks: [],
+                    lastScanReport: '',
+                    lastMindOutputs: null,
+                },
+                abortController: null,
+                timerInterval: null,
+                secondsElapsed: 0,
+                logContainerEl: null,
+                renderContainerEl: null,
+                tabEl: null,
+                _savedToVault: false,
+            };
+
+            // Create DOM containers
+            const logHost = document.getElementById('crucibleLogHost');
+            const renderHost = document.getElementById('sessionRenderHost');
+
+            const logDiv = document.createElement('div');
+            logDiv.id = `log_${id}`;
+            logDiv.className = 'session-log-container crucible-log';
+            logDiv.style.cssText = 'overflow-y:auto; font-size:0.875rem;';
+            if (isEmpty) {
+                logDiv.innerHTML = `<p class="text-orange-500 font-bold">[系统]: 工作区 #${sessionManager.sessionCounter} 已就绪。输入问题并点击 IGNITE 开始。</p>`;
+            } else {
+                logDiv.innerHTML = `<p class="text-orange-500 font-bold">[系统]: V6.0 多会话引擎启动。会话 #${sessionManager.sessionCounter} 已创建。</p>`;
+            }
+            logHost.appendChild(logDiv);
+            session.logContainerEl = logDiv;
+
+            const renderDiv = document.createElement('div');
+            renderDiv.id = `render_${id}`;
+            renderDiv.className = 'session-render-container blueprint-render';
+            renderDiv.style.cssText = 'overflow-y:auto;';
+            renderDiv.innerHTML = `<div class="welcome-msg text-gray-600 italic mt-4 text-center">等待推演开始...</div>`;
+            renderHost.appendChild(renderDiv);
+            session.renderContainerEl = renderDiv;
+
+            // Create tab
+            session.tabEl = createTabElement(session);
+            document.getElementById('tabList').appendChild(session.tabEl);
+
+            sessionManager.sessions.set(id, session);
+            return session;
+        }
+
+        function getActiveSession() {
+            if (!sessionManager.activeSessionId) return null;
+            return sessionManager.sessions.get(sessionManager.activeSessionId) || null;
+        }
+
+        // ==========================================
+        // 4. V6.0 TAB STRIP
+        // ==========================================
+        function createTabElement(session) {
+            const tab = document.createElement('div');
+            tab.className = `session-tab ${session.status}`;
+            tab.id = `tab_${session.id}`;
+            tab.title = session.title;
+            tab.innerHTML = `<div class="tab-title">${escapeHtml(session.title)}</div><div class="flex justify-between items-center"><span class="tab-badge">${getStatusIcon(session.status)}</span><span class="tab-timer"></span></div>`;
+            tab.addEventListener('click', (e) => {
+                if (e.target.classList.contains('tab-close-btn')) return;
+                switchToSession(session.id);
+            });
+            tab.addEventListener('dblclick', (e) => {
+                if (e.target.classList.contains('tab-close-btn')) return;
+                const newTitle = prompt('重命名会话:', session.title || '');
+                if (newTitle !== null && newTitle.trim()) {
+                    session.title = newTitle.trim();
+                    tab.title = session.title;
+                }
+            });
+
+            // Close button
+            const closeBtn = document.createElement('span');
+            closeBtn.className = 'tab-close-btn';
+            closeBtn.textContent = '\u00d7';
+            closeBtn.onclick = (e) => {
+                e.stopPropagation();
+                if (session.status === 'running' && !confirm('该会话正在运行中，确定中止并关闭？')) return;
+                deleteSessionTab(session.id);
+            };
+            tab.appendChild(closeBtn);
+
+            return tab;
+        }
+
+        function getStatusIcon(status) {
+            switch(status) {
+                case 'empty': return '○';
+                case 'queued': return '⏳';
+                case 'running': return '▶';
+                case 'complete': return '✓';
+                case 'failed': return '✕';
+                case 'interrupted': return '⏸';
+                default: return '?';
+            }
+        }
+
+        function updateTabState(session) {
+            const tab = session.tabEl;
+            if (!tab) return;
+            tab.className = `session-tab ${session.status}`;
+            if (session.id === sessionManager.activeSessionId) tab.classList.add('active');
+            // Update title
+            const titleEl = tab.querySelector('.tab-title');
+            if (titleEl) titleEl.textContent = session.title || '新工作区';
+            // Update badge
+            const badge = tab.querySelector('.tab-badge');
+            if (badge) {
+                if (session.status === 'running' && session._roundProgress) {
+                    badge.textContent = session._roundProgress;
+                } else {
+                    badge.textContent = getStatusIcon(session.status);
+                }
+            }
+            // Update timer
+            const timer = tab.querySelector('.tab-timer');
+            if (timer) {
+                timer.textContent = (session.status === 'running' || session.status === 'complete' || session.status === 'failed' || session.status === 'interrupted') ? formatTime(session.secondsElapsed || 0) : '';
+            }
+        }
+
+        function switchToSession(sessionId) {
+            const prevId = sessionManager.activeSessionId;
+            sessionManager.activeSessionId = sessionId;
+
+            // Hide all containers, show target
+            sessionManager.sessions.forEach((s) => {
+                s.logContainerEl.classList.remove('active-session');
+                s.renderContainerEl.classList.remove('active-session');
+                s.tabEl.classList.remove('active');
+            });
+
+            const session = sessionManager.sessions.get(sessionId);
+            if (session) {
+                session.logContainerEl.classList.add('active-session');
+                session.renderContainerEl.classList.add('active-session');
+                session.tabEl.classList.add('active');
+
+                // Update header status
+                updateHeaderForSession(session);
+                // Update metrics bar
+                updateMetricsForSession(session);
+            }
+        }
+
+        function updateHeaderForSession(session) {
+            const statusCenter = document.getElementById('statusCenter');
+            const liveStatus = document.getElementById('liveStatus');
+            const liveTimer = document.getElementById('liveTimer');
+            const cancelBtn = document.getElementById('cancelActiveBtn');
+            const roundsSelect = document.getElementById('maxRounds');
+
+            // Sync round selector to this session
+            roundsSelect.value = session.maxRounds.toString();
+            roundsSelect.disabled = (session.status === 'running' || session.status === 'queued');
+
+            if (session.status === 'running') {
+                statusCenter.classList.remove('hidden');
+                statusCenter.classList.add('flex');
+                liveStatus.innerText = session.phase;
+                liveTimer.innerText = formatTime(session.secondsElapsed);
+                cancelBtn.classList.remove('hidden');
+                cancelBtn.onclick = () => { stopSession(session.id); };
+                setStatusStyle(liveStatus, session.phase.includes('缝合') ? 'pulse' : 'normal');
+            } else if (session.status === 'complete') {
+                statusCenter.classList.remove('hidden');
+                statusCenter.classList.add('flex');
+                liveStatus.innerText = '合成完毕';
+                liveTimer.innerText = formatTime(session.secondsElapsed);
+                cancelBtn.classList.add('hidden');
+                setStatusStyle(liveStatus, 'done');
+            } else if (session.status === 'failed') {
+                statusCenter.classList.remove('hidden');
+                statusCenter.classList.add('flex');
+                liveStatus.innerText = '系统异常';
+                liveTimer.innerText = formatTime(session.secondsElapsed);
+                cancelBtn.classList.add('hidden');
+                setStatusStyle(liveStatus, 'normal');
+            } else if (session.status === 'queued') {
+                statusCenter.classList.remove('hidden');
+                statusCenter.classList.add('flex');
+                liveStatus.innerText = '排队中';
+                liveTimer.innerText = '00:00';
+                cancelBtn.classList.remove('hidden');
+                cancelBtn.onclick = () => { stopSession(session.id); };
+                setStatusStyle(liveStatus, 'normal');
+            } else if (session.status === 'empty') {
+                statusCenter.classList.remove('hidden');
+                statusCenter.classList.add('flex');
+                liveStatus.innerText = '等待点火';
+                liveTimer.innerText = '00:00';
+                cancelBtn.classList.add('hidden');
+                setStatusStyle(liveStatus, 'normal');
+            } else {
+                statusCenter.classList.add('hidden');
+                cancelBtn.classList.add('hidden');
+            }
+        }
+
+        function updateMetricsForSession(session) {
+            const metricsBar = document.getElementById('metricsBar');
+            const metricsContent = document.getElementById('metricsContent');
+            if (session._metrics) {
+                metricsBar.classList.remove('hidden', 'bg-orange-950/30', 'border-orange-900/50', 'text-orange-400', 'bg-blue-950/30', 'border-blue-900/50', 'text-blue-400');
+                if (session._metrics.mode === 'simple') {
+                    metricsBar.classList.add('bg-blue-950/30', 'border-blue-900/50', 'text-blue-400');
+                } else {
+                    metricsBar.classList.add('bg-orange-950/30', 'border-orange-900/50', 'text-orange-400');
+                }
+                metricsContent.innerText = session._metrics.text;
+            } else {
+                metricsBar.classList.add('hidden');
+            }
+        }
+
+        function formatTime(secs) {
+            return `${String(Math.floor(secs / 60)).padStart(2, '0')}:${String(secs % 60).padStart(2, '0')}`;
+        }
+
+        function setStatusStyle(el, type) {
+            if (type === 'done') el.className = "bg-green-900/20 text-green-500 border border-green-900/50 text-xs font-bold uppercase tracking-widest px-4 py-1.5 rounded-l-md transition-colors";
+            else if (type === 'simple') el.className = "bg-blue-900/20 text-blue-400 border border-blue-900/50 text-xs font-bold uppercase tracking-widest px-4 py-1.5 rounded-l-md transition-colors";
+            else if (type === 'pulse') el.className = "bg-red-900/30 text-red-500 border border-red-900/50 text-xs font-bold uppercase tracking-widest px-4 py-1.5 rounded-l-md animate-pulse";
+            else el.className = "bg-orange-900/20 text-orange-500 border border-orange-900/50 text-xs font-bold uppercase tracking-widest px-4 py-1.5 rounded-l-md transition-colors";
+        }
+
+        // ==========================================
+        // 5. V6.0 SESSION-SCOPED DOM HELPERS
+        // ==========================================
+        function escapeHtml(str) {
+            return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+        }
+
+        function appendToLogWithSmartScroll(session, htmlContent) {
+            const container = session.logContainerEl;
+            const isSticky = container.scrollHeight - container.scrollTop - container.clientHeight < 150;
+            container.innerHTML += htmlContent;
+            if (isSticky) container.scrollTop = container.scrollHeight;
+        }
+
+        function appendTextWithSmartScroll(session, boxElement, chunk) {
+            const container = session.logContainerEl;
+            const isSticky = container.scrollHeight - container.scrollTop - container.clientHeight < 150;
+            boxElement.innerText += chunk;
+            if (isSticky) container.scrollTop = container.scrollHeight;
+        }
+
+        function renderTargetWithSmartScroll(session, rawText, targetId) {
+            const container = session.renderContainerEl;
+            const isSticky = container.scrollHeight - container.scrollTop - container.clientHeight < 150;
+            const targetEl = document.getElementById(targetId);
+            if (targetEl) targetEl.innerHTML = marked.parse(rawText, { gfm: true, breaks: true });
+            if (isSticky || rawText.length < 100) container.scrollTop = container.scrollHeight;
+        }
+
+        function appendUserMessageDOM(session, text) {
+            const container = session.renderContainerEl;
+            const wMsg = container.querySelector('.welcome-msg');
+            if (wMsg) wMsg.remove();
+            const msgHtml = `<div class="user-msg-block mb-6 ml-12" data-session-id="${session.id}"><div class="flex justify-between items-center mb-1"><span class="text-orange-500 text-[10px] font-bold uppercase tracking-widest">>>> 提问</span><button class="edit-question-btn text-[10px] text-gray-600 hover:text-orange-400 transition" data-original="${escapeHtml(text)}">✏️ 编辑重跑</button></div><div class="bg-gray-900 border border-gray-800 p-4 rounded-lg rounded-tr-none text-gray-300 text-sm whitespace-pre-wrap">${escapeHtml(text)}</div></div>`;
+            container.innerHTML += msgHtml;
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function createSynthesisBlockDOM(session, runId, isSimple, entropy) {
+            const container = session.renderContainerEl;
+            const titleColor = isSimple ? 'text-blue-400' : 'text-green-500';
+            const titleText = isSimple ? '>>> 输出' : '>>> 综合结论';
+            const entropyBadge = (!isSimple && entropy != null)
+                ? `<span class="ml-2 text-[9px] font-mono text-gray-500 border border-gray-700 px-1.5 py-0.5 rounded">一致度 ${(10 - entropy) * 10}%</span>`
+                : '';
+            const html = `<div class="mb-12 mr-4" id="wrap_${session.id}_${runId}">
+                <div class="flex items-center justify-between mb-1">
+                    <span class="${titleColor} text-[10px] font-bold uppercase tracking-widest">${titleText}${entropyBadge}</span>
+                    <div class="flex gap-1 synthesis-actions" style="display:none;">
+                        <button class="synthesis-export-btn bg-gray-900 hover:bg-gray-800 text-[10px] px-2 py-1 border border-gray-700 rounded opacity-40 hover:opacity-100 transition" data-runid="${runId}" data-sessionid="${session.id}">📄 导出</button>
+                        <button class="regen-btn bg-gray-900 hover:bg-gray-800 text-[10px] px-2 py-1 border border-gray-700 rounded opacity-40 hover:opacity-100 transition" data-runid="${runId}" data-sessionid="${session.id}">🔄 重新生成</button>
+                        <button class="copy-block-btn bg-gray-900 hover:bg-gray-800 text-[10px] px-2 py-1 border border-gray-700 rounded opacity-40 hover:opacity-100 transition" data-runid="${runId}" data-sessionid="${session.id}">📋 复制</button>
+                    </div>
+                </div>
+                <div id="render_${session.id}_${runId}" class="synthesis-render-target bg-[#0c0c0c] border border-gray-800 p-4 rounded-lg rounded-tl-none prose prose-sm prose-invert max-w-none prose-orange shadow-lg min-h-[50px]"><p class="text-gray-600 text-xs animate-pulse">生成中...</p></div>
+                <button class="followup-btn mt-2 text-[10px] text-gray-600 hover:text-orange-400 border border-gray-800 hover:border-orange-900 px-3 py-1.5 rounded transition w-full">↩ 继续追问</button>
+            </div>`;
+            container.innerHTML += html;
+            container.scrollTop = container.scrollHeight;
+            return `render_${session.id}_${runId}`;
+        }
+
+        function setSessionStatus(session, text, type) {
+            session.phase = text;
+            if (session.id === sessionManager.activeSessionId) {
+                const liveStatus = document.getElementById('liveStatus');
+                liveStatus.innerText = text;
+                setStatusStyle(liveStatus, type || 'normal');
+            }
+        }
+
+        function startSessionTimer(session) {
+            session.secondsElapsed = 0;
+            if (session.timerInterval) clearInterval(session.timerInterval);
+            session.timerInterval = setInterval(() => {
+                session.secondsElapsed++;
+                // Update timer in tab
+                const timer = session.tabEl?.querySelector('.tab-timer');
+                if (timer) timer.textContent = formatTime(session.secondsElapsed);
+                // Also update header if active
+                if (session.id === sessionManager.activeSessionId) {
+                    document.getElementById('liveTimer').innerText = formatTime(session.secondsElapsed);
+                }
+            }, 1000);
+            if (session.id === sessionManager.activeSessionId) {
+                const statusCenter = document.getElementById('statusCenter');
+                statusCenter.classList.remove('hidden');
+                statusCenter.classList.add('flex');
+                document.getElementById('liveTimer').innerText = '00:00';
+            }
+        }
+
+        function stopSessionTimer(session) {
+            if (session.timerInterval) {
+                clearInterval(session.timerInterval);
+                session.timerInterval = null;
+            }
+        }
+
+        // ==========================================
+        // 6. V6.0 EXECUTION QUEUE
+        // ==========================================
+        function handleIgnite() {
+            const inputArea = document.getElementById('userInput');
+            const userInput = inputArea.value;
+            if (!userInput.trim()) return;
+
+            const isCampfire = document.getElementById('modeToggle').checked;
+            const maxRounds = parseInt(document.getElementById('maxRounds').value);
+
+            // Reuse the active session if it exists and is empty or complete
+            let session = getActiveSession();
+            if (session && (session.status === 'empty' || session.status === 'complete')) {
+                // Reuse this session — update its settings for this run
+                session.userInput = userInput;
+                session.isCampfire = isCampfire;
+                session.maxRounds = maxRounds;
+
+                // Update title on first run (when session was empty)
+                if (session.status === 'empty' || session.title === '新工作区') {
+                    session.title = userInput.substring(0, 15) + (userInput.length > 15 ? '...' : '');
+                    session.data.title = session.title;
+                    session.tabEl.title = session.title;
+                    const titleEl = session.tabEl.querySelector('.tab-title');
+                    if (titleEl) titleEl.textContent = session.title;
+                }
+            } else if (session && (session.status === 'running' || session.status === 'queued')) {
+                // Queue as follow-up for this session
+                session._pendingFollowUp = userInput;
+                inputArea.value = '';
+                localStorage.removeItem('campfire_input_draft');
+                showToast('已排队，当前分析完成后自动继续');
+                appendToLogWithSmartScroll(session, `<p class="text-gray-500 mt-2 text-[10px] border border-gray-800 rounded p-2 bg-gray-900/50">📝 待处理追问: ${escapeHtml(userInput.substring(0, 60))}${userInput.length > 60 ? '...' : ''}</p>`);
+                return;
+            } else if (!session || session.status === 'failed' || session.status === 'interrupted') {
+                // No active session or it's in a non-reusable state — create new
+                session = createSession(userInput, isCampfire, maxRounds, false);
+            }
+
+            inputArea.value = '';
+            localStorage.removeItem('campfire_input_draft');
+            inputArea.focus();
+
+            switchToSession(session.id);
+
+            // Set to queued/running
+            if (sessionManager.runningSessions.size < sessionManager.maxConcurrency) {
+                startSession(session.id);
+            } else {
+                sessionManager.sessionQueue.push(session.id);
+                session.status = 'queued';
+                session.phase = '排队中 (#' + sessionManager.sessionQueue.length + ')';
+                updateTabState(session);
+                updateHeaderForSession(session);
+            }
+        }
+
+        function handleNewSession() {
+            const session = createSession('', true, 3, true);
+            switchToSession(session.id);
+            document.getElementById('userInput').focus();
+        }
+
+        function deleteSessionTab(sessionId) {
+            const session = sessionManager.sessions.get(sessionId);
+            if (!session) return;
+
+            // Cannot delete a running session
+            if (session.status === 'running') {
+                appendToLogWithSmartScroll(session, `<p class="text-yellow-500 text-sm mt-2">[系统]: 请先取消正在运行的会话。</p>`);
+                return;
+            }
+
+            // Remove DOM elements
+            if (session.logContainerEl) session.logContainerEl.remove();
+            if (session.renderContainerEl) session.renderContainerEl.remove();
+            if (session.tabEl) session.tabEl.remove();
+
+            // Remove from queue if queued
+            sessionManager.sessionQueue = sessionManager.sessionQueue.filter(id => id !== sessionId);
+
+            // Clean up pin text store
+            for (const key of _logPinTextStore.keys()) {
+                if (key.includes(sessionId)) {
+                    _logPinTextStore.delete(key);
+                }
+            }
+
+            // Remove from sessions map
+            sessionManager.sessions.delete(sessionId);
+
+            // If this was the active session, switch to another or create a new empty one
+            if (sessionManager.activeSessionId === sessionId) {
+                sessionManager.activeSessionId = null;
+                const remaining = Array.from(sessionManager.sessions.keys());
+                if (remaining.length > 0) {
+                    switchToSession(remaining[remaining.length - 1]);
+                } else {
+                    handleNewSession();
+                }
+            }
+        }
+
+        function startSession(sessionId) {
+            const session = sessionManager.sessions.get(sessionId);
+            if (!session) return;
+            session.status = 'running';
+            session.phase = '启动中...';
+            sessionManager.runningSessions.add(sessionId);
+            updateTabState(session);
+            if (session.id === sessionManager.activeSessionId) updateHeaderForSession(session);
+
+            // Run ignition (async, no await — fires and forgets, drainQueue on finish)
+            runIgnition(session.id).catch(() => {});
+        }
+
+        function drainQueue() {
+            while (sessionManager.sessionQueue.length > 0 && sessionManager.runningSessions.size < sessionManager.maxConcurrency) {
+                const nextId = sessionManager.sessionQueue.shift();
+                const nextSession = sessionManager.sessions.get(nextId);
+                if (nextSession && nextSession.status === 'queued') {
+                    startSession(nextId);
+                }
+            }
+            // Update queue positions
+            sessionManager.sessionQueue.forEach((id, i) => {
+                const s = sessionManager.sessions.get(id);
+                if (s) { s.phase = '排队中 (#' + (i+1) + ')'; if (s.id === sessionManager.activeSessionId) updateHeaderForSession(s); }
+            });
+        }
+
+        function stopSession(sessionId) {
+            const session = sessionManager.sessions.get(sessionId);
+            if (!session) return;
+
+            if (session.status === 'queued') {
+                sessionManager.sessionQueue = sessionManager.sessionQueue.filter(id => id !== sessionId);
+                session.status = 'failed';
+                session.phase = '已取消';
+                updateTabState(session);
+                if (session.id === sessionManager.activeSessionId) updateHeaderForSession(session);
+                appendToLogWithSmartScroll(session, `<p class="text-red-500 font-bold mt-4">会话已从队列中移除。</p>`);
+            } else if (session.status === 'running') {
+                session._userStopped = true; // flag for catch block
+                if (session.abortController) {
+                    session.abortController.abort();
+                }
+            }
+        }
+
+        // ==========================================
+        // 7. V6.0 STREAMING WITH ABORT SIGNAL
+        // ==========================================
+        async function callModelStream(model, sys, messages, onChunk, signal) {
+            const fetchOptions = {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${config?.apiKey || ''}` },
+                body: JSON.stringify({ model, messages: [{ role: 'system', content: sys }, ...messages], temperature: 0.7, stream: true })
+            };
+            if (signal) fetchOptions.signal = signal;
+
+            const resp = await fetch(`${(config?.baseUrl || '').replace(/\/+$/, '')}/chat/completions`, fetchOptions);
+            if (!resp.ok) throw new Error(`[${model}] Error: ${resp.statusText}`);
+
+            const reader = resp.body.getReader();
+            const decoder = new TextDecoder("utf-8");
+            let fullText = "", buffer = "";
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n');
+                buffer = lines.pop();
+                for (const line of lines) {
+                    const trimmedLine = line.trim();
+                    if (trimmedLine.startsWith('data: ') && trimmedLine !== 'data: [DONE]') {
+                        try { const d = JSON.parse(trimmedLine.substring(6)); const content = d.choices[0]?.delta?.content || ''; if (content) { fullText += content; onChunk(content, fullText); } } catch (e) {}
+                    }
+                }
+            }
+            buffer += decoder.decode();
+            if (buffer.trim() && buffer.trim().startsWith('data: ') && buffer.trim() !== 'data: [DONE]') {
+                try { const d = JSON.parse(buffer.trim().substring(6)); const content = d.choices[0]?.delta?.content || ''; if (content) { fullText += content; onChunk(content, fullText); } } catch (e) {}
+            }
+            return fullText;
+        }
+
+        async function callSearchStep(session, userInput, signal) {
+            const searchModel = config.models.search;
+            if (!config.searchEnabled || !searchModel) return null;
+            setSessionStatus(session, '联网搜索...');
+            appendToLogWithSmartScroll(session, `<p class="text-cyan-400 mt-6 text-[10px] font-bold uppercase tracking-widest">🔍 联网搜索...</p>`);
+            const idSearch = `search_${session.id}_${Date.now()}`;
+            appendToLogWithSmartScroll(session, `<div id="${idSearch}" class="stream-box text-cyan-300" style="border-color:#164e63;"></div>`);
+            const searchBox = document.getElementById(idSearch);
+            try {
+                const result = await callModelStream(searchModel, SEARCH_PROMPT, [{ role: 'user', content: userInput }], (c) => appendTextWithSmartScroll(session, searchBox, c), signal);
+                collapseStreamBox(searchBox, result.length);
+                return result;
+            } catch (e) {
+                if (searchBox) searchBox.textContent = `[搜索失败: ${e.message}]`;
+                return null;
+            }
+        }
+
+        // ==========================================
+        // 8. V6.0 SESSION-SCOPED IGNITION
+        // ==========================================
+
+        function collapseStreamBox(boxElement, charCount) {
+            if (!boxElement) return;
+            // Trim leading blank lines so collapsed preview shows actual content
+            boxElement.innerText = boxElement.innerText.replace(/^\s*\n+/, '');
+            const wrapper = document.createElement('div');
+            wrapper.className = 'stream-collapse-wrapper collapsed';
+            boxElement.parentNode.insertBefore(wrapper, boxElement);
+            wrapper.appendChild(boxElement);
+
+            const toggle = document.createElement('button');
+            toggle.className = 'stream-collapse-toggle';
+            toggle.setAttribute('data-charcount', charCount.toString());
+            toggle.textContent = `\u25bc 展开全文 (${charCount.toLocaleString()}字)`;
+            wrapper.appendChild(toggle);
+        }
+
+        async function resumeFromCheckpoint(sessionId) {
+            const session = sessionManager.sessions.get(sessionId);
+            if (!session || !session._checkpoint) return;
+            const cp = session._checkpoint;
+            session._checkpoint = null;
+            session.status = 'running';
+            session.abortController = new AbortController();
+            const signal = session.abortController.signal;
+            sessionManager.runningSessions.add(sessionId);
+            updateTabState(session);
+            startSessionTimer(session);
+
+            appendToLogWithSmartScroll(session, `<p class="text-orange-400 mt-4 text-[10px] font-bold uppercase tracking-widest border-t border-orange-900 pt-4">🔄 断点续传中...</p>`);
+
+            let { runId, startTime, sysAlpha, sysBeta, sysJudge, finalA, finalB, scanReport, actualRounds, finalEntropy, userInput, maxRounds } = cp;
+            let historyA = cp.historyA || [], historyB = cp.historyB || [];
+
+            try {
+                if (cp.phase === 'simple') {
+                    // Resume simple mode
+                    setSessionStatus(session, '生成中...', 'simple');
+                    const idSingle = `single_resume_${session.id}_${runId}`;
+                    appendToLogWithSmartScroll(session, `<div class="mt-2"><div id="${idSingle}" class="stream-box text-gray-300"></div></div>`);
+                    const boxSingle = document.getElementById(idSingle);
+                    const renderTarget = createSynthesisBlockDOM(session, runId, true, null);
+                    const finalSingle = await callModelStream(config.models.alpha, cp.sysAlpha, session.data.simple_history, (c, ft) => {
+                        appendTextWithSmartScroll(session, boxSingle, c);
+                        renderTargetWithSmartScroll(session, ft, renderTarget);
+                    }, signal);
+                    session.data.simple_history.push({ role: 'assistant', content: finalSingle });
+                    session.data.last_synthesis = finalSingle;
+                    session.data.rawMarkdownMap[runId] = finalSingle;
+                    session.data.blocks.push({ type: 'synthesis', runId, isSimple: true, markdown: finalSingle });
+                    renderSynthesisAsBlocks(session, finalSingle, runId, {});
+                    injectPinButtonsForRound(session, 0, 'simple', finalSingle, runId, idSingle);
+                    const tc = ((Date.now() - startTime) / 1000).toFixed(1);
+                    appendToLogWithSmartScroll(session, `<p class="text-white font-bold mt-4 bg-blue-900/20 p-3 rounded border border-blue-800 text-sm">输出完成。</p>`);
+                    session.status = 'complete';
+                    session._metrics = { mode: 'simple', text: `模式: 极简单模 | 耗时: ${tc}s` };
+                    setSessionStatus(session, '执行完成', 'done');
+                } else {
+                    // Resume campfire mode
+                    const startRound = cp.phase === 'judge' ? maxRounds + 1 : cp.round;
+                    const startPhase = cp.phase; // 'minds', 'scan', or 'judge'
+
+                    for (let r = startRound; r <= maxRounds; r++) {
+                        actualRounds = r;
+
+                        // Skip minds if resuming from scan in the same round
+                        if (!(r === startRound && startPhase === 'scan')) {
+                            setSessionStatus(session, `对比分析 (R${r})`);
+                            appendToLogWithSmartScroll(session, `<p class="text-orange-500 mt-6 font-bold border-b border-gray-800 pb-1">ROUND ${r}: 双模对比</p>`);
+                            const idA = `a_resume_${session.id}_${runId}_r${r}`, idB = `b_resume_${session.id}_${runId}_r${r}`;
+                            appendToLogWithSmartScroll(session, `<div class="grid grid-cols-2 gap-4 mt-2"><div><span class="text-blue-400 text-[10px] uppercase font-bold">Mind \u03b1 (R${r})</span><div id="${idA}" class="stream-box"></div></div><div><span class="text-purple-400 text-[10px] uppercase font-bold">Mind \u03b2 (R${r})</span><div id="${idB}" class="stream-box"></div></div></div>`);
+
+                            session._checkpoint = { phase: 'minds', round: r, runId, startTime, sysAlpha, sysBeta, sysJudge, historyA: JSON.parse(JSON.stringify(historyA)), historyB: JSON.parse(JSON.stringify(historyB)), finalA, finalB, scanReport, actualRounds, finalEntropy, userInput, maxRounds };
+                            const boxA = document.getElementById(idA), boxB = document.getElementById(idB);
+                            const [resA, resB] = await Promise.all([
+                                callModelStream(config.models.alpha, sysAlpha, historyA, (c) => appendTextWithSmartScroll(session, boxA, c), signal),
+                                callModelStream(config.models.beta, sysBeta, historyB, (c) => appendTextWithSmartScroll(session, boxB, c), signal)
+                            ]);
+                            finalA = resA; finalB = resB;
+                            session.data.lastMindOutputs = { alpha: resA, beta: resB };
+                            injectPinButtonsForRound(session, r, 'mind1', finalA, runId, idA);
+                            injectPinButtonsForRound(session, r, 'mind2', finalB, runId, idB);
+                            collapseStreamBox(document.getElementById(idA), finalA.length);
+                            collapseStreamBox(document.getElementById(idB), finalB.length);
+                        }
+
+                        setSessionStatus(session, `差分审计 (R${r}/${maxRounds})`);
+                        appendToLogWithSmartScroll(session, `<p class="text-green-500 mt-4 text-[10px] font-bold uppercase tracking-widest">分析差异...</p>`);
+                        const idS = `s_resume_${session.id}_${runId}_r${r}`;
+                        appendToLogWithSmartScroll(session, `<div id="${idS}" class="stream-box text-green-700"></div>`);
+                        session._checkpoint = { phase: 'scan', round: r, runId, startTime, sysAlpha, sysBeta, sysJudge, historyA: JSON.parse(JSON.stringify(historyA)), historyB: JSON.parse(JSON.stringify(historyB)), finalA, finalB, scanReport, actualRounds, finalEntropy, userInput, maxRounds };
+                        scanReport = await callModelStream(config.models.scan, directives.scan, [{ role: 'user', content: `MIND 1:\n${finalA}\n\nMIND 2:\n${finalB}` }], (c) => appendTextWithSmartScroll(session, document.getElementById(idS), c), signal);
+                        injectPinButtonsForRound(session, r, 'scan', scanReport, runId, idS);
+                        collapseStreamBox(document.getElementById(idS), scanReport.length);
+                        session.data.lastScanReport = scanReport;
+
+                        const scoreMatch = scanReport.match(/\[分歧度评分:\s*(\d+)\/10\]/);
+                        finalEntropy = scoreMatch ? parseInt(scoreMatch[1]) : 10;
+
+                        // Check if scan requests clarification from user
+                        const clarifyMatch = scanReport.match(/\[需要澄清:\s*(.+?)\]/);
+                        if (clarifyMatch && r === 1) {
+                            const clarifyQuestion = clarifyMatch[1];
+                            appendToLogWithSmartScroll(session, `<p class="text-yellow-400 font-bold mt-2 p-3 border border-yellow-800 bg-yellow-900/10 rounded">⚠️ 问题边界模糊：${escapeHtml(clarifyQuestion)}</p>`);
+                            appendToLogWithSmartScroll(session, `<div class="flex gap-2 mt-2"><input type="text" class="clarify-input flex-grow bg-gray-900 border border-yellow-800 rounded p-2 text-sm text-white outline-none focus:border-yellow-500" placeholder="补充说明..." data-session-id="${session.id}"><button class="clarify-submit bg-yellow-900/50 hover:bg-yellow-900 text-yellow-400 border border-yellow-800 px-4 rounded text-xs font-bold transition" data-session-id="${session.id}">补充并继续</button><button class="clarify-skip text-gray-500 hover:text-gray-300 border border-gray-700 px-3 rounded text-xs transition" data-session-id="${session.id}">跳过</button></div>`);
+                            // Pause: store state for resumption after user input
+                            session._clarifyState = { round: r, runId, startTime, sysAlpha, sysBeta, sysJudge, historyA: JSON.parse(JSON.stringify(historyA)), historyB: JSON.parse(JSON.stringify(historyB)), finalA, finalB, scanReport, actualRounds, finalEntropy, userInput, maxRounds };
+                            session.status = 'waiting_clarify';
+                            session._roundProgress = null;
+                            setSessionStatus(session, '等待补充...', 'normal');
+                            updateTabState(session);
+                            return; // exit runIgnition, will resume via clarify handler
+                        }
+
+                        if (finalEntropy < 4) {
+                            appendToLogWithSmartScroll(session, `<p class="text-green-400 font-bold mt-2">>>> 双方观点基本一致 (一致度 ${(10-finalEntropy)*10}%)，跳过后续轮次。</p>`);
+                            break;
+                        } else if (r < maxRounds) {
+                            appendToLogWithSmartScroll(session, `<p class="text-orange-400 font-bold mt-2">>>> 一致度 ${(10-finalEntropy)*10}%，继续下一轮对比。</p>`);
+                            historyA.push({ role: 'assistant', content: finalA }, { role: 'user', content: `差分审计揭示了以下分歧：\n${scanReport}\n\n请开放整合这些信息。若你的判断有调整，明确说明改变了什么；若仍坚持，给出新的具体理由。` });
+                            historyB.push({ role: 'assistant', content: finalB }, { role: 'user', content: `差分审计揭示了以下分歧：\n${scanReport}\n\n请开放整合这些信息。若你的判断有调整，明确说明改变了什么；若仍坚持，给出新的具体理由。` });
+                        } else {
+                            appendToLogWithSmartScroll(session, `<p class="text-red-400 font-bold mt-2">>>> 达到最大轮次 (一致度 ${(10-finalEntropy)*10}%)，进入综合。</p>`);
+                        }
+                    }
+
+                    // Judge synthesis
+                    session._roundProgress = null;
+                    setSessionStatus(session, '生成结论...', 'pulse');
+                    updateTabState(session);
+                    appendToLogWithSmartScroll(session, `<p class="text-orange-500 mt-8 font-bold border-b border-gray-800 pb-1 uppercase tracking-widest">综合结论</p>`);
+                    session._checkpoint = { phase: 'judge', runId, startTime, sysAlpha, sysBeta, sysJudge, finalA, finalB, scanReport, actualRounds, finalEntropy, userInput, maxRounds };
+                    const renderTarget = createSynthesisBlockDOM(session, runId, false, finalEntropy);
+                    const judgeUserMsg = `意图: ${userInput}\nMIND 1:\n${finalA}\nMIND 2:\n${finalB}\nDIFF:\n${scanReport}`;
+                    session._judgeInputs = { userMsg: judgeUserMsg, sysPrompt: sysJudge, runId, isSimple: false };
+                    const synthesis = await callModelStream(config.models.judge, sysJudge, [{ role: 'user', content: judgeUserMsg }], (c, ft) => {
+                        renderTargetWithSmartScroll(session, ft, renderTarget);
+                    }, signal);
+
+                    session.data.last_synthesis = synthesis;
+                    session.data.rawMarkdownMap[runId] = synthesis;
+                    session.data.full_conversation += `### 问题\n${userInput}\n\n### 综合结论\n${synthesis}\n\n---\n\n`;
+                    session.data.blocks.push({ type: 'synthesis', runId, isSimple: false, markdown: synthesis });
+                    renderSynthesisAsBlocks(session, synthesis, runId, { sessionTitle: session.title, rounds: actualRounds, model: 'synthesis', type: 'campfire' });
+
+                    const timeCost = ((Date.now() - startTime) / 1000).toFixed(1);
+                    appendToLogWithSmartScroll(session, `<p class="text-white font-bold mt-6 bg-green-900/20 p-3 rounded border border-green-800 text-sm">分析完成。</p>`);
+                    const convergenceRate = (10 - finalEntropy) * 10;
+                    session.status = 'complete';
+                    session._metrics = { mode: 'campfire', text: `对比: ${actualRounds} 轮 | 一致度: ${convergenceRate}% | 耗时: ${timeCost}s` };
+                    setSessionStatus(session, '合成完毕', 'done');
+                }
+
+                session._checkpoint = null;
+                await saveSessionToVault(session);
+                session._savedToVault = true;
+            } catch (err) {
+                if (err.name === 'AbortError') {
+                    if (session._userStopped) {
+                        session.status = 'complete';
+                        session._checkpoint = null;
+                        session._userStopped = false;
+                        appendToLogWithSmartScroll(session, `<p class="text-yellow-500 mt-4 p-2 border border-yellow-900 bg-yellow-900/10 text-sm">已停止，已生成内容已保留。</p>`);
+                        setSessionStatus(session, '已停止', 'done');
+                        await saveSessionToVault(session).catch(() => {});
+                    } else {
+                        session.status = 'failed';
+                        session._checkpoint = null;
+                        appendToLogWithSmartScroll(session, `<p class="text-red-500 mt-4 p-2 border border-red-900 bg-red-900/10 text-sm">已取消。</p>`);
+                    }
+                } else if (session._checkpoint) {
+                    session.status = 'interrupted';
+                    setSessionStatus(session, '已中断 — 可续传', 'normal');
+                    appendToLogWithSmartScroll(session, `<p class="text-red-500 mt-4 p-2 border border-red-900 bg-red-900/10 text-sm">!! 中断: ${escapeHtml(err.message)}</p>`);
+                    appendToLogWithSmartScroll(session, `<button class="resume-btn mt-2 bg-orange-900/30 hover:bg-orange-900/50 text-orange-400 border border-orange-800 px-4 py-2 rounded text-xs font-bold transition w-full" data-session-id="${session.id}">🔄 断点续传</button>`);
+                } else {
+                    session.status = 'failed';
+                    setSessionStatus(session, '系统异常', 'normal');
+                    appendToLogWithSmartScroll(session, `<p class="text-red-500 mt-4 p-2 border border-red-900 bg-red-900/10 text-sm">!! 错误: ${escapeHtml(err.message)}</p>`);
+                }
+            } finally {
+                stopSessionTimer(session);
+                sessionManager.runningSessions.delete(sessionId);
+                session._roundProgress = null;
+                updateTabState(session);
+                if (session.id === sessionManager.activeSessionId) {
+                    updateHeaderForSession(session);
+                    updateMetricsForSession(session);
+                }
+                drainQueue();
+                // Auto-run pending follow-up
+                if (session._pendingFollowUp && (session.status === 'complete')) {
+                    const followUp = session._pendingFollowUp;
+                    session._pendingFollowUp = null;
+                    session.userInput = followUp;
+                    startSession(session.id);
+                }
+            }
+        }
+
+        async function runIgnition(sessionId) {
+            const session = sessionManager.sessions.get(sessionId);
+            if (!session) return;
+
+            const userInput = session.userInput;
+            const isCampfire = session.isCampfire;
+            const maxRounds = session.maxRounds;
+            const metricsBar = document.getElementById('metricsBar');
+            const metricsContent = document.getElementById('metricsContent');
+            const isContinuation = session.data.blocks.length > 0;
+
+            session.abortController = new AbortController();
+            const signal = session.abortController.signal;
+
+            try {
+                const startTime = Date.now();
+                const runId = Date.now().toString();
+
+                if (!session.data.id) {
+                    session.data.id = session.id.split('_')[0]; // timestamp part
+                }
+                session.data.timestamp = new Date().toISOString();
+                session.data.title = session.title;
+
+                session.data.blocks.push({ type: 'user', text: userInput });
+                appendUserMessageDOM(session, userInput);
+                startSessionTimer(session);
+
+                // Web search (optional) — α and β each search independently in campfire mode
+                const makeInject = (ctx) => ctx
+                    ? `\n\n[联网搜索参考 — ${new Date().toLocaleDateString('zh-CN')}]\n${ctx}\n\n以上为搜索结果，优先用于校验「事实」层。`
+                    : '';
+                let sysAlpha = directives.alpha, sysBeta = directives.alpha, sysJudge = directives.judge;
+
+                // Memory index: inject relevant past conclusions
+                const memoryCtx = findRelevantMemory(userInput);
+                if (memoryCtx) {
+                    const memInject = `\n\n[历史记忆 — 以下为过往相关分析结论，仅供参考，不要盲从]\n${memoryCtx}`;
+                    sysAlpha += memInject;
+                    sysBeta += memInject;
+                }
+
+                if (config.searchEnabled && config.models.search) {
+                    if (isCampfire) {
+                        setSessionStatus(session, '联网搜索 (α + β)...');
+                        appendToLogWithSmartScroll(session, `<p class="text-cyan-400 mt-6 text-[10px] font-bold uppercase tracking-widest">🔍 联网搜索 — α & β 各自检索...</p>`);
+                        const idSA = `search_a_${session.id}_${runId}`, idSB = `search_b_${session.id}_${runId}`;
+                        appendToLogWithSmartScroll(session, `<div class="grid grid-cols-2 gap-4 mt-2"><div><span class="text-blue-400 text-[10px] uppercase font-bold">α 检索</span><div id="${idSA}" class="stream-box text-cyan-300" style="border-color:#164e63;"></div></div><div><span class="text-purple-400 text-[10px] uppercase font-bold">β 检索</span><div id="${idSB}" class="stream-box text-cyan-300" style="border-color:#164e63;"></div></div></div>`);
+                        const [ctxA, ctxB] = await Promise.all([
+                            callModelStream(config.models.search, SEARCH_PROMPT, [{role:'user',content:userInput}], (c) => appendTextWithSmartScroll(session, document.getElementById(idSA), c), signal).catch(() => null),
+                            callModelStream(config.models.search, SEARCH_PROMPT, [{role:'user',content:userInput}], (c) => appendTextWithSmartScroll(session, document.getElementById(idSB), c), signal).catch(() => null),
+                        ]);
+                        const boxSA = document.getElementById(idSA), boxSB = document.getElementById(idSB);
+                        if (ctxA && boxSA) collapseStreamBox(boxSA, ctxA.length);
+                        if (ctxB && boxSB) collapseStreamBox(boxSB, ctxB.length);
+                        sysAlpha = directives.alpha + makeInject(ctxA);
+                        sysBeta  = directives.alpha + makeInject(ctxB);
+                        sysJudge = directives.judge + (ctxA || ctxB
+                            ? `\n\n[联网搜索参考]\nMind α 的检索：\n${ctxA || '无'}\n\nMind β 的检索：\n${ctxB || '无'}`
+                            : '');
+                    } else {
+                        // Simple mode: single search
+                        const ctx = await callSearchStep(session, userInput, signal);
+                        sysAlpha = directives.alpha + makeInject(ctx);
+                        sysJudge = directives.judge + makeInject(ctx);
+                    }
+                }
+
+                if (isContinuation) {
+                    appendToLogWithSmartScroll(session, `<p class="text-gray-500 mt-4 text-[10px] uppercase tracking-widest border-t border-gray-800 pt-4">--- 继续推演 ---</p>`);
+                }
+
+                if (!isCampfire) {
+                    // === SIMPLE MODE ===
+                    setSessionStatus(session, '生成中...', 'simple');
+                    appendToLogWithSmartScroll(session, `<p class="text-blue-400 mt-6 font-bold border-b border-gray-800 pb-1 uppercase tracking-widest">>>> [极简模式] 直接输出</p>`);
+                    session.data.simple_history.push({ role: 'user', content: userInput });
+                    const idSingle = `single_${session.id}_${runId}`;
+                    appendToLogWithSmartScroll(session, `<div class="mt-2"><div id="${idSingle}" class="stream-box text-gray-300"></div></div>`);
+                    const boxSingle = document.getElementById(idSingle);
+                    const renderTarget = createSynthesisBlockDOM(session, runId, true, null);
+                    session._judgeInputs = { sysPrompt: sysAlpha, history: [...session.data.simple_history], runId, isSimple: true };
+                    session._checkpoint = { phase: 'simple', runId, startTime, sysAlpha, userInput };
+
+                    const finalSingle = await callModelStream(config.models.alpha, sysAlpha, session.data.simple_history, (c, ft) => {
+                        appendTextWithSmartScroll(session, boxSingle, c);
+                        renderTargetWithSmartScroll(session, ft, renderTarget);
+                    }, signal);
+
+                    session.data.simple_history.push({ role: 'assistant', content: finalSingle });
+                    session.data.last_synthesis = finalSingle;
+                    session.data.rawMarkdownMap[runId] = finalSingle;
+                    session.data.full_conversation += `### 意图输入\n${userInput}\n\n### 极简输出\n${finalSingle}\n\n---\n\n`;
+                    session.data.blocks.push({ type: 'synthesis', runId, isSimple: true, markdown: finalSingle });
+
+                    // Render synthesis as pinnable blocks
+                    renderSynthesisAsBlocks(session, finalSingle, runId, { sessionTitle: session.title, model: config.models.alpha, type: 'simple' });
+
+                    // Inject pin button on log
+                    injectPinButtonsForRound(session, 0, 'simple', finalSingle, runId, idSingle);
+
+                    // Simple mode output does NOT get collapsed
+
+                    const tc = ((Date.now() - startTime) / 1000).toFixed(1);
+                    appendToLogWithSmartScroll(session, `<p class="text-white font-bold mt-4 bg-blue-900/20 p-3 rounded border border-blue-800 text-sm">输出完成。</p>`);
+
+                    session.status = 'complete';
+                    session._metrics = { mode: 'simple', text: `模式: 极简单模 | 耗时: ${tc}s` };
+                    setSessionStatus(session, '执行完成', 'done');
+
+                } else {
+                    // === CAMPFIRE MODE ===
+                    // Build intent with history context for continuations
+                    let intent;
+                    if (isContinuation && session.data.last_synthesis) {
+                        let contextParts = [`[历史基准]\n${session.data.full_conversation}`];
+
+                        if (session.data.lastScanReport) {
+                            contextParts.push(`[上轮分歧分析]\n${session.data.lastScanReport}`);
+                        }
+
+                        if (session.data.lastMindOutputs) {
+                            // Include truncated mind outputs (first 500 chars each) to avoid context overflow
+                            const alphaSnippet = session.data.lastMindOutputs.alpha?.substring(0, 500) || '';
+                            const betaSnippet = session.data.lastMindOutputs.beta?.substring(0, 500) || '';
+                            if (alphaSnippet) contextParts.push(`[上轮Mind1摘要]\n${alphaSnippet}...`);
+                            if (betaSnippet) contextParts.push(`[上轮Mind2摘要]\n${betaSnippet}...`);
+                        }
+
+                        contextParts.push(`[新意图]\n${userInput}`);
+                        intent = contextParts.join('\n\n');
+                    } else {
+                        intent = userInput;
+                    }
+                    let historyA = [{ role: 'user', content: intent }], historyB = [{ role: 'user', content: intent }];
+                    let finalA = "", finalB = "", scanReport = "";
+                    let actualRounds = 0, finalEntropy = 10;
+
+                    for (let r = 1; r <= maxRounds; r++) {
+                        actualRounds = r;
+                        session._roundProgress = `${r}/${maxRounds}`;
+                        setSessionStatus(session, `对比分析 (R${r}/${maxRounds})`);
+                        updateTabState(session);
+                        appendToLogWithSmartScroll(session, `<p class="text-orange-500 mt-6 font-bold border-b border-gray-800 pb-1">ROUND ${r}/${maxRounds}: 双模对比</p>`);
+                        const idA = `a_${session.id}_${runId}_r${r}`, idB = `b_${session.id}_${runId}_r${r}`;
+                        appendToLogWithSmartScroll(session, `<div class="grid grid-cols-2 gap-4 mt-2"><div><span class="text-blue-400 text-[10px] uppercase font-bold">Mind \u03b1 (R${r})</span><div id="${idA}" class="stream-box"></div></div><div><span class="text-purple-400 text-[10px] uppercase font-bold">Mind \u03b2 (R${r})</span><div id="${idB}" class="stream-box"></div></div></div>`);
+
+                        session._checkpoint = { phase: 'minds', round: r, runId, startTime, sysAlpha, sysBeta, sysJudge, historyA: JSON.parse(JSON.stringify(historyA)), historyB: JSON.parse(JSON.stringify(historyB)), finalA, finalB, scanReport, actualRounds, finalEntropy, userInput, maxRounds };
+                        const boxA = document.getElementById(idA), boxB = document.getElementById(idB);
+                        const [resA, resB] = await Promise.all([
+                            callModelStream(config.models.alpha, sysAlpha, historyA, (c) => appendTextWithSmartScroll(session, boxA, c), signal),
+                            callModelStream(config.models.beta, sysBeta, historyB, (c) => appendTextWithSmartScroll(session, boxB, c), signal)
+                        ]);
+                        finalA = resA; finalB = resB;
+                        session.data.lastMindOutputs = { alpha: resA, beta: resB };
+
+                        // Pin buttons for mind outputs
+                        injectPinButtonsForRound(session, r, 'mind1', finalA, runId, idA);
+                        injectPinButtonsForRound(session, r, 'mind2', finalB, runId, idB);
+
+                        // Collapse mind stream boxes
+                        collapseStreamBox(document.getElementById(idA), finalA.length);
+                        collapseStreamBox(document.getElementById(idB), finalB.length);
+
+                        setSessionStatus(session, `差分审计 (R${r}/${maxRounds})`);
+                        appendToLogWithSmartScroll(session, `<p class="text-green-500 mt-4 text-[10px] font-bold uppercase tracking-widest">分析差异...</p>`);
+                        const idS = `s_${session.id}_${runId}_r${r}`;
+                        appendToLogWithSmartScroll(session, `<div id="${idS}" class="stream-box text-green-700"></div>`);
+                        session._checkpoint = { phase: 'scan', round: r, runId, startTime, sysAlpha, sysBeta, sysJudge, historyA: JSON.parse(JSON.stringify(historyA)), historyB: JSON.parse(JSON.stringify(historyB)), finalA, finalB, scanReport, actualRounds, finalEntropy, userInput, maxRounds };
+                        scanReport = await callModelStream(config.models.scan, directives.scan, [{ role: 'user', content: `MIND 1:\n${resA}\n\nMIND 2:\n${resB}` }], (c) => appendTextWithSmartScroll(session, document.getElementById(idS), c), signal);
+
+                        // Pin button for scan
+                        injectPinButtonsForRound(session, r, 'scan', scanReport, runId, idS);
+
+                        // Collapse scan stream box
+                        collapseStreamBox(document.getElementById(idS), scanReport.length);
+                        session.data.lastScanReport = scanReport;
+
+                        const scoreMatch = scanReport.match(/\[分歧度评分:\s*(\d+)\/10\]/);
+                        finalEntropy = scoreMatch ? parseInt(scoreMatch[1]) : 10;
+
+                        // Check if scan requests clarification from user
+                        const clarifyMatch = scanReport.match(/\[需要澄清:\s*(.+?)\]/);
+                        if (clarifyMatch && r === 1) {
+                            const clarifyQuestion = clarifyMatch[1];
+                            appendToLogWithSmartScroll(session, `<p class="text-yellow-400 font-bold mt-2 p-3 border border-yellow-800 bg-yellow-900/10 rounded">⚠️ 问题边界模糊：${escapeHtml(clarifyQuestion)}</p>`);
+                            appendToLogWithSmartScroll(session, `<div class="flex gap-2 mt-2"><input type="text" class="clarify-input flex-grow bg-gray-900 border border-yellow-800 rounded p-2 text-sm text-white outline-none focus:border-yellow-500" placeholder="补充说明..." data-session-id="${session.id}"><button class="clarify-submit bg-yellow-900/50 hover:bg-yellow-900 text-yellow-400 border border-yellow-800 px-4 rounded text-xs font-bold transition" data-session-id="${session.id}">补充并继续</button><button class="clarify-skip text-gray-500 hover:text-gray-300 border border-gray-700 px-3 rounded text-xs transition" data-session-id="${session.id}">跳过</button></div>`);
+                            // Pause: store state for resumption after user input
+                            session._clarifyState = { round: r, runId, startTime, sysAlpha, sysBeta, sysJudge, historyA: JSON.parse(JSON.stringify(historyA)), historyB: JSON.parse(JSON.stringify(historyB)), finalA, finalB, scanReport, actualRounds, finalEntropy, userInput, maxRounds };
+                            session.status = 'waiting_clarify';
+                            session._roundProgress = null;
+                            setSessionStatus(session, '等待补充...', 'normal');
+                            updateTabState(session);
+                            return; // exit runIgnition, will resume via clarify handler
+                        }
+
+                        if (finalEntropy < 4) {
+                            appendToLogWithSmartScroll(session, `<p class="text-green-400 font-bold mt-2">>>> 双方观点基本一致 (一致度 ${(10-finalEntropy)*10}%)，跳过后续轮次。</p>`);
+                            break;
+                        } else if (r < maxRounds) {
+                            appendToLogWithSmartScroll(session, `<p class="text-orange-400 font-bold mt-2">>>> 一致度 ${(10-finalEntropy)*10}%，继续下一轮对比。</p>`);
+                            historyA.push({ role: 'assistant', content: resA }, { role: 'user', content: `差分审计揭示了以下分歧：\n${scanReport}\n\n请开放整合这些信息。若你的判断有调整，明确说明改变了什么；若仍坚持，给出新的具体理由。` });
+                            historyB.push({ role: 'assistant', content: resB }, { role: 'user', content: `差分审计揭示了以下分歧：\n${scanReport}\n\n请开放整合这些信息。若你的判断有调整，明确说明改变了什么；若仍坚持，给出新的具体理由。` });
+                        } else {
+                            appendToLogWithSmartScroll(session, `<p class="text-red-400 font-bold mt-2">>>> 达到最大轮次 (一致度 ${(10-finalEntropy)*10}%)，进入综合。</p>`);
+                        }
+                    }
+
+                    session._roundProgress = null;
+                    setSessionStatus(session, '生成结论...', 'pulse');
+                    updateTabState(session);
+                    appendToLogWithSmartScroll(session, `<p class="text-orange-500 mt-8 font-bold border-b border-gray-800 pb-1 uppercase tracking-widest">综合结论</p>`);
+
+                    session._checkpoint = { phase: 'judge', runId, startTime, sysAlpha, sysBeta, sysJudge, finalA, finalB, scanReport, actualRounds, finalEntropy, userInput, maxRounds };
+
+                    const renderTarget = createSynthesisBlockDOM(session, runId, false, finalEntropy);
+                    const judgeUserMsg = `意图: ${userInput}\nMIND 1:\n${finalA}\nMIND 2:\n${finalB}\nDIFF:\n${scanReport}`;
+                    session._judgeInputs = { userMsg: judgeUserMsg, sysPrompt: sysJudge, runId, isSimple: false };
+                    const synthesis = await callModelStream(config.models.judge, sysJudge, [{ role: 'user', content: judgeUserMsg }], (c, ft) => {
+                        renderTargetWithSmartScroll(session, ft, renderTarget);
+                    }, signal);
+
+                    // Final synthesis output does NOT get collapsed
+
+                    session.data.last_synthesis = synthesis;
+                    session.data.rawMarkdownMap[runId] = synthesis;
+                    session.data.full_conversation += `### 问题\n${userInput}\n\n### 综合结论\n${synthesis}\n\n---\n\n`;
+                    session.data.blocks.push({ type: 'synthesis', runId, isSimple: false, markdown: synthesis });
+
+                    // Render synthesis as pinnable blocks
+                    renderSynthesisAsBlocks(session, synthesis, runId, { sessionTitle: session.title, rounds: actualRounds, model: 'synthesis', type: 'campfire' });
+
+                    const timeCost = ((Date.now() - startTime) / 1000).toFixed(1);
+                    appendToLogWithSmartScroll(session, `<p class="text-white font-bold mt-6 bg-green-900/20 p-3 rounded border border-green-800 text-sm">分析完成。</p>`);
+                    const convergenceRate = (10 - finalEntropy) * 10;
+
+                    session.status = 'complete';
+                    session._metrics = { mode: 'campfire', text: `对比: ${actualRounds} 轮 | 一致度: ${convergenceRate}% | 耗时: ${timeCost}s` };
+                    setSessionStatus(session, '合成完毕', 'done');
+                }
+
+                session._checkpoint = null;
+                await saveSessionToVault(session);
+                session._savedToVault = true;
+
+            } catch (err) {
+                if (err.name === 'AbortError') {
+                    session.status = 'failed';
+                    session.phase = '已取消';
+                    session._checkpoint = null;
+                    appendToLogWithSmartScroll(session, `<p class="text-red-500 mt-4 p-2 border border-red-900 bg-red-900/10 text-sm">会话已被用户取消。</p>`);
+                } else if (session._checkpoint) {
+                    session.status = 'interrupted';
+                    session.phase = '已中断';
+                    setSessionStatus(session, '已中断 — 可续传', 'normal');
+                    appendToLogWithSmartScroll(session, `<p class="text-red-500 mt-4 p-2 border border-red-900 bg-red-900/10 text-sm">!! 网络中断: ${escapeHtml(err.message)}</p>`);
+                    appendToLogWithSmartScroll(session, `<button class="resume-btn mt-2 bg-orange-900/30 hover:bg-orange-900/50 text-orange-400 border border-orange-800 px-4 py-2 rounded text-xs font-bold transition w-full" data-session-id="${session.id}">🔄 断点续传 — 从 ${session._checkpoint.phase === 'minds' ? 'Mind 对比' : session._checkpoint.phase === 'scan' ? '差异分析' : session._checkpoint.phase === 'judge' ? '综合结论' : '输出'} 继续</button>`);
+                } else {
+                    session.status = 'failed';
+                    session.phase = '系统异常';
+                    setSessionStatus(session, '系统异常', 'normal');
+                    appendToLogWithSmartScroll(session, `<p class="text-red-500 mt-4 p-2 border border-red-900 bg-red-900/10 text-sm">!! 错误: ${escapeHtml(err.message)}</p>`);
+                }
+            } finally {
+                if (session.status === 'waiting_clarify') {
+                    // Don't clean up — session is paused waiting for user input
+                    sessionManager.runningSessions.delete(sessionId);
+                    session._roundProgress = null;
+                    updateTabState(session);
+                    if (session.id === sessionManager.activeSessionId) updateHeaderForSession(session);
+                    drainQueue();
+                } else {
+                    stopSessionTimer(session);
+                    sessionManager.runningSessions.delete(sessionId);
+                    session._roundProgress = null;
+                    updateTabState(session);
+                    if (session.id === sessionManager.activeSessionId) {
+                        updateHeaderForSession(session);
+                        updateMetricsForSession(session);
+                    }
+                    drainQueue();
+                    cleanupOldSessions();
+                    // Auto-run pending follow-up
+                    if (session._pendingFollowUp && (session.status === 'complete')) {
+                        const followUp = session._pendingFollowUp;
+                        session._pendingFollowUp = null;
+                        session.userInput = followUp;
+                        startSession(session.id);
+                    }
+                }
+            }
+        }
+
+        // ==========================================
+        // 9. V6.0 SYNTHESIS BLOCK SPLITTER + PIN BUTTONS
+        // ==========================================
+        function splitMarkdownIntoBlocks(markdown) {
+            if (!markdown || !markdown.trim()) return [markdown || ''];
+
+            // Split at headings (# or ##) and horizontal rules (---)
+            const blocks = [];
+            const lines = markdown.split('\n');
+            let current = [];
+
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i];
+                const isHeading = /^#{1,3}\s/.test(line);
+                const isHR = /^---+\s*$/.test(line.trim());
+
+                if ((isHeading || isHR) && current.length > 0) {
+                    const text = current.join('\n').trim();
+                    if (text) blocks.push(text);
+                    current = [];
+                    if (!isHR) current.push(line);
+                } else {
+                    current.push(line);
+                }
+            }
+            if (current.length > 0) {
+                const text = current.join('\n').trim();
+                if (text) blocks.push(text);
+            }
+
+            // Fallback: if only 1 block, split on double newlines
+            if (blocks.length <= 1 && markdown.length > 200) {
+                const parBlocks = markdown.split(/\n\n+/).filter(b => b.trim());
+                if (parBlocks.length > 1) return parBlocks;
+            }
+
+            return blocks.length > 0 ? blocks : [markdown];
+        }
+
+        function renderSynthesisAsBlocks(session, rawMarkdown, runId, sourceMeta) {
+            const targetId = `render_${session.id}_${runId}`;
+            const targetEl = document.getElementById(targetId);
+            if (!targetEl) return;
+
+            const blocks = splitMarkdownIntoBlocks(rawMarkdown);
+
+            let html = '';
+            blocks.forEach((block, i) => {
+                const blockId = `pblock_${session.id}_${runId}_${i}`;
+                _logPinTextStore.set(blockId, block);
+                html += `<div class="pinnable-block" id="${blockId}">`;
+                html += `<div class="prose prose-sm prose-invert max-w-none prose-orange">${marked.parse(block, { gfm: true, breaks: true })}</div>`;
+                html += `</div>`;
+            });
+
+            targetEl.innerHTML = html;
+
+            // Show action buttons now that synthesis is complete
+            const wrap = document.getElementById(`wrap_${session.id}_${runId}`);
+            if (wrap) {
+                const actions = wrap.querySelector('.synthesis-actions');
+                if (actions) actions.style.display = '';
+            }
+        }
+
+        // ==========================================
+        // 14. V6.0 CRUCIBLE LOG PIN BUTTONS
+        // ==========================================
+        const _logPinTextStore = new Map(); // btnId → rawText
+
+        function pinToRightPanel(session, label, rawText) {
+            const container = session.renderContainerEl;
+            const pinId = `pin_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+            const html = `<div class="pinned-excerpt mb-6 mr-4" id="${pinId}">
+                <div class="flex items-center justify-between mb-1">
+                    <span class="text-[10px] font-bold uppercase tracking-widest text-blue-400">📌 ${escapeHtml(label)}</span>
+                    <button class="pin-remove-btn text-[10px] text-gray-600 hover:text-red-400 transition" data-pin-id="${pinId}">✕ 移除</button>
+                </div>
+                <div class="pinned-body prose prose-sm prose-invert max-w-none prose-orange">${marked.parse(rawText, { gfm: true, breaks: true })}</div>
+            </div>`;
+            container.innerHTML += html;
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function injectPinButtonsForRound(session, roundNum, type, rawText, runId, boxId) {
+            const label = type === 'simple' ? '极简输出' : type === 'mind1' ? `Mind 1 (R${roundNum})` : type === 'mind2' ? `Mind 2 (R${roundNum})` : type === 'scan' ? `差分 (R${roundNum})` : type;
+            const btnId = `logpin_${session.id}_${runId}_${type}_r${roundNum}`;
+            _logPinTextStore.set(btnId, rawText);
+            const box = boxId ? document.getElementById(boxId) : null;
+            if (box) {
+                box.insertAdjacentHTML('beforeend', `<div class="log-btn-bar"><button class="log-copy-btn" data-btn-id="${btnId}" title="复制">⧉</button><button class="log-pin-btn" data-session-id="${session.id}" data-btn-id="${btnId}" data-label="${escapeHtml(label)}" title="摘录到右侧">⊞</button></div>`);
+            }
+        }
+
+        // ==========================================
+        // 16. V6.0 VAULT ENGINE (adapted from v5.2)
+        // ==========================================
+        let vaultHandle = null;
+
+        const idb = {
+            db: null,
+            async init() {
+                if (this.db) return;
+                return new Promise((resolve, reject) => {
+                    try {
+                        const req = indexedDB.open('CampfireVaultDB', 1);
+                        req.onupgradeneeded = e => e.target.result.createObjectStore('handles');
+                        req.onsuccess = e => { this.db = e.target.result; resolve(); };
+                        req.onerror = e => reject(e);
+                    } catch(e) { resolve(); }
+                });
+            },
+            async get(key) {
+                try {
+                    await this.init();
+                    if (!this.db) return null;
+                    return new Promise((resolve) => {
+                        const tx = this.db.transaction('handles', 'readonly');
+                        const req = tx.objectStore('handles').get(key);
+                        req.onsuccess = e => resolve(e.target.result);
+                        req.onerror = () => resolve(null);
+                    });
+                } catch(e) { return null; }
+            },
+            async set(key, val) {
+                try {
+                    await this.init();
+                    if (!this.db) return;
+                    return new Promise((resolve) => {
+                        const tx = this.db.transaction('handles', 'readwrite');
+                        tx.objectStore('handles').put(val, key);
+                        tx.oncomplete = () => resolve();
+                    });
+                } catch(e) { console.warn("IDB persist failed.", e); }
+            }
+        };
+
+        async function verifyPermission(fileHandle, readWrite) {
+            const options = { mode: readWrite ? 'readwrite' : 'read' };
+            if ((await fileHandle.queryPermission(options)) === 'granted') return true;
+            if ((await fileHandle.requestPermission(options)) === 'granted') return true;
+            return false;
+        }
+
+        let _sessionsDir = null;
+
+        async function initVaultStructure() {
+            if (!vaultHandle) return;
+            _sessionsDir = await vaultHandle.getDirectoryHandle('sessions', { create: true });
+
+            // Load config from vault if available
+            try {
+                await vaultHandle.getFileHandle('config.json');
+                await loadConfigFromVault();
+            } catch(e) {
+                // No config.json yet, write current config
+                await saveConfigToVault();
+            }
+        }
+
+        async function saveConfigToVault() {
+            if (!vaultHandle) return;
+            try {
+                const data = { secrets: config, directives };
+                const fh = await vaultHandle.getFileHandle('config.json', { create: true });
+                const w = await fh.createWritable();
+                await w.write(JSON.stringify(data, null, 2));
+                await w.close();
+            } catch(e) { console.error('Config save to vault failed', e); }
+        }
+
+        async function loadConfigFromVault() {
+            if (!vaultHandle) return false;
+            try {
+                const fh = await vaultHandle.getFileHandle('config.json');
+                const file = await fh.getFile();
+                const data = JSON.parse(await file.text());
+                if (data.secrets) {
+                    config = { ...CONFIG_DEFAULTS, ...data.secrets, models: { ...CONFIG_DEFAULTS.models, ...(data.secrets.models || {}) } };
+                    localStorage.setItem('campfire_secrets', JSON.stringify(config));
+                }
+                if (data.directives) {
+                    directives = { ...SYSTEM_PROMPTS, ...data.directives };
+                    localStorage.setItem('campfire_directives_v5_2', JSON.stringify(directives));
+                }
+                loadUI();
+                return true;
+            } catch(e) { return false; }
+        }
+
+        async function getSessionsDir() {
+            if (_sessionsDir) return _sessionsDir;
+            if (!vaultHandle) return null;
+            try {
+                _sessionsDir = await vaultHandle.getDirectoryHandle('sessions', { create: true });
+            } catch(e) { return null; }
+            return _sessionsDir;
+        }
+
+        async function mountVault() {
+            try {
+                vaultHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
+                await idb.set('rootHandle', vaultHandle);
+                await initVaultStructure();
+                await loadConfigFromVault();
+                updateVaultStatus(true);
+                loadVaultHistory();
+                loadMemoryIndex();
+            } catch (err) {
+                if(err.name !== 'AbortError') alert("挂载中止或失败。\n" + err.message);
+            }
+        }
+
+        async function autoMountOnLoad() {
+            try {
+                const storedHandle = await idb.get('rootHandle');
+                if (storedHandle) {
+                    vaultHandle = storedHandle;
+                    updateVaultStatus(false, true);
+                }
+            } catch(e) { console.warn("Auto-mount silently skipped."); }
+        }
+
+        function updateVaultStatus(isMounted, needsVerification = false) {
+            const drawerStatus = document.getElementById('drawerVaultStatus');
+            const settingStatus = document.getElementById('settingVaultStatus');
+            if (isMounted) {
+                const msg = `已连接: ${vaultHandle.name}`;
+                drawerStatus.innerHTML = `<span class="text-green-500">${msg}</span>`;
+                settingStatus.innerHTML = `<span class="text-green-400">${msg}</span>`;
+                drawerStatus.onclick = null; settingStatus.onclick = null;
+                drawerStatus.classList.remove('cursor-pointer', 'hover:bg-gray-800');
+                settingStatus.classList.remove('cursor-pointer', 'hover:text-purple-300');
+            } else if (needsVerification) {
+                drawerStatus.innerHTML = `<span class="text-yellow-500">⏳ 打开档案库时将自动恢复 [${vaultHandle.name}] 的访问权</span>`;
+                settingStatus.innerHTML = `<span class="text-yellow-400">点击此处恢复对 [${vaultHandle.name}] 的访问权限</span>`;
+                drawerStatus.classList.remove('cursor-pointer', 'hover:bg-gray-800', 'transition');
+                drawerStatus.onclick = null;
+                settingStatus.classList.add('cursor-pointer', 'hover:text-purple-300', 'transition');
+                const verifyLogic = async () => {
+                    if(await verifyPermission(vaultHandle, true)) {
+                        await initVaultStructure(); updateVaultStatus(true); loadVaultHistory(); loadMemoryIndex();
+                    }
+                };
+                settingStatus.onclick = verifyLogic;
+            } else {
+                drawerStatus.innerHTML = "状态: 未挂载 (请前往 ⚙️ 矩阵 设置)";
+                settingStatus.innerHTML = "状态: 暂无本地持久化";
+            }
+        }
+
+        // Debounce loadVaultHistory by 500ms
+        let _vaultHistoryTimer = null;
+        function loadVaultHistoryDebounced() {
+            clearTimeout(_vaultHistoryTimer);
+            _vaultHistoryTimer = setTimeout(() => loadVaultHistory(), 500);
+        }
+
+        async function loadVaultHistory() {
+            if (!vaultHandle) return;
+            if (!(await verifyPermission(vaultHandle, true))) return;
+
+            const list = document.getElementById('historyList');
+            list.innerHTML = '';
+            let files = [];
+            const dir = await getSessionsDir();
+            if (!dir) { list.innerHTML = '<div class="text-xs text-gray-600 italic">无法访问 sessions 目录。</div>'; return; }
+            for await (const entry of dir.values()) {
+                if (entry.kind === 'file' && entry.name.endsWith('.json')) files.push(entry);
+            }
+
+            files.sort((a, b) => b.name.localeCompare(a.name));
+            if(files.length === 0) { list.innerHTML = '<div class="text-xs text-gray-600 italic">Vault 为空。</div>'; return; }
+
+            for (const fileHandle of files) {
+                const file = await fileHandle.getFile();
+                try {
+                    const text = await file.text();
+                    const data = JSON.parse(text);
+                    if(data.id && data.title) {
+                        const dateStr = new Date(parseInt(data.id)).toLocaleString('zh-CN', {month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit'});
+                        const itemHtml = `
+                            <div class="session-item group flex justify-between items-center p-2 bg-gray-900 border border-gray-800 rounded hover:bg-gray-800 hover:border-orange-900/50 cursor-pointer transition" data-id="${data.id}" data-filename="${escapeHtml(fileHandle.name)}">
+                                <div class="truncate flex-grow session-load-btn">
+                                    <div class="session-title-text text-xs font-bold text-gray-300 truncate group-hover:text-orange-500 transition">${escapeHtml(data.title)}</div>
+                                    <div class="text-[10px] text-gray-600 font-mono mt-1">${dateStr}</div>
+                                </div>
+                                <div class="flex gap-1 opacity-0 group-hover:opacity-100 transition shrink-0">
+                                    <button class="rename-btn text-gray-600 hover:text-orange-400 px-1 text-[10px]" title="重命名">✏️</button>
+                                    <button class="delete-btn text-gray-600 hover:text-red-500 px-1" title="删除">✕</button>
+                                </div>
+                            </div>`;
+                        list.innerHTML += itemHtml;
+                    }
+                } catch(e) {}
+            }
+
+            list.onclick = (e) => {
+                const item = e.target.closest('.session-item');
+                if (!item) return;
+                const filename = item.getAttribute('data-filename');
+                if (e.target.classList.contains('delete-btn')) {
+                    deleteSession(filename, e);
+                } else if (e.target.classList.contains('rename-btn')) {
+                    renameSession(filename, item, e);
+                } else if (e.target.closest('.session-load-btn')) {
+                    loadSessionData(filename);
+                }
+            };
+        }
+
+        // v6.0: loadSessionData creates a proper session in sessionManager
+        async function loadSessionData(filename) {
+            if (!vaultHandle) return;
+            let data;
+            try {
+                const dir = await getSessionsDir();
+                const fileHandle = await dir.getFileHandle(filename);
+                const file = await fileHandle.getFile();
+                data = JSON.parse(await file.text());
+            } catch(e) { alert("档案读取失败: " + e.message); return; }
+
+            // Dedup: if session already loaded, switch to it
+            for (const [, s] of sessionManager.sessions) {
+                if (s.data && s.data.id === data.id) {
+                    showToast('该档案已加载'); switchToSession(s.id);
+                    document.getElementById('historyPanel').classList.remove('open');
+                    return;
+                }
+            }
+
+            // Create a session from loaded data
+            sessionManager.sessionCounter++;
+            const id = (data.id || Date.now().toString()) + '_loaded_' + sessionManager.sessionCounter;
+            const title = data.title || '历史会话';
+
+            const session = {
+                id,
+                title,
+                userInput: '',
+                isCampfire: false,
+                maxRounds: 3,
+                status: 'complete',
+                phase: '历史挂载',
+                data: data,
+                abortController: null,
+                timerInterval: null,
+                secondsElapsed: 0,
+                logContainerEl: null,
+                renderContainerEl: null,
+                tabEl: null,
+                _metrics: null,
+            };
+
+            // Create DOM containers
+            const logHost = document.getElementById('crucibleLogHost');
+            const renderHost = document.getElementById('sessionRenderHost');
+
+            const logDiv = document.createElement('div');
+            logDiv.id = `log_${id}`;
+            logDiv.className = 'session-log-container crucible-log';
+            logDiv.style.cssText = 'overflow-y:auto; font-size:0.875rem;';
+            logDiv.innerHTML = `<p class="text-orange-500 font-bold">[系统]: 物理档案 <${data.id}> 注入成功。允许继续推演。</p>`;
+            logHost.appendChild(logDiv);
+            session.logContainerEl = logDiv;
+
+            const renderDiv = document.createElement('div');
+            renderDiv.id = `render_${id}`;
+            renderDiv.className = 'session-render-container blueprint-render';
+            renderDiv.style.cssText = 'overflow-y:auto;';
+            renderHost.appendChild(renderDiv);
+            session.renderContainerEl = renderDiv;
+
+            // Rebuild render view from blocks
+            if (data.blocks) {
+                data.blocks.forEach(b => {
+                    if (b.type === 'user') {
+                        appendUserMessageDOM(session, b.text);
+                    } else if (b.type === 'synthesis') {
+                        const targetId = createSynthesisBlockDOM(session, b.runId, b.isSimple);
+                        if (b.markdown) {
+                            renderSynthesisAsBlocks(session, b.markdown, b.runId, { sessionTitle: title, type: b.isSimple ? 'simple' : 'campfire', runId: b.runId });
+                        }
+                    }
+                });
+            }
+
+            // Create tab
+            session.tabEl = createTabElement(session);
+            // Override tab inner content for loaded sessions (preserve close button)
+            const closeBtn = session.tabEl.querySelector('.tab-close-btn');
+            session.tabEl.innerHTML = `<div class="tab-title">📂 ${escapeHtml(title)}</div><div class="flex justify-between items-center"><span class="tab-badge">${getStatusIcon('complete')}</span><span class="tab-timer"></span></div>`;
+            if (closeBtn) session.tabEl.appendChild(closeBtn);
+            session.tabEl.title = title;
+            document.getElementById('tabList').appendChild(session.tabEl);
+
+            sessionManager.sessions.set(id, session);
+            updateTabState(session);
+            switchToSession(id);
+
+            document.getElementById('historyPanel').classList.remove('open');
+        }
+
+        async function deleteSession(filename, event) {
+            event.stopPropagation();
+            if(!confirm("确定从物理硬盘彻底粉碎此推演账本吗？")) return;
+            try {
+                const dir = await getSessionsDir();
+                await dir.removeEntry(filename);
+            } catch(e) { alert("删除失败: " + e.message); return; }
+            loadVaultHistory();
+        }
+
+        async function renameSession(filename, itemEl, event) {
+            event.stopPropagation();
+            const titleEl = itemEl.querySelector('.session-title-text');
+            const oldTitle = titleEl?.textContent || '';
+            const newTitle = prompt('重命名会话标题：', oldTitle);
+            if (!newTitle || newTitle === oldTitle) return;
+            try {
+                const dir = await getSessionsDir();
+                const fh = await dir.getFileHandle(filename);
+                const file = await fh.getFile();
+                const data = JSON.parse(await file.text());
+                data.title = newTitle;
+                const w = await fh.createWritable();
+                await w.write(JSON.stringify(data, null, 2));
+                await w.close();
+                if (titleEl) titleEl.textContent = newTitle;
+                showToast('已重命名');
+            } catch(e) { showToast('重命名失败: ' + e.message); }
+        }
+
+        // ==========================================
+        // MEMORY INDEX — cross-session context
+        // Stored as memory.json in vault root
+        // ==========================================
+        let _memoryIndexCache = [];
+
+        function getMemoryIndex() {
+            return _memoryIndexCache;
+        }
+
+        async function loadMemoryIndex() {
+            if (!vaultHandle) return;
+            try {
+                const fh = await vaultHandle.getFileHandle('memory.json');
+                const file = await fh.getFile();
+                _memoryIndexCache = JSON.parse(await file.text());
+            } catch(e) { _memoryIndexCache = []; }
+        }
+
+        async function saveMemoryIndex(index) {
+            if (index.length > 100) index = index.slice(-100);
+            _memoryIndexCache = index;
+            if (!vaultHandle) return;
+            try {
+                const fh = await vaultHandle.getFileHandle('memory.json', { create: true });
+                const w = await fh.createWritable();
+                await w.write(JSON.stringify(index, null, 2));
+                await w.close();
+            } catch(e) { console.error('Memory index save failed', e); }
+        }
+
+        async function buildMemoryEntry(session) {
+            const synthesis = session.data.last_synthesis;
+            if (!synthesis || synthesis.length < 50) return;
+            const sessionId = session.data.id;
+            // Skip if already indexed
+            const index = getMemoryIndex();
+            if (index.some(e => e.id === sessionId)) return;
+
+            // Use scan model (cheap) to extract keywords
+            try {
+                const resp = await fetch(`${(config?.baseUrl || '').replace(/\/+$/, '')}/chat/completions`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${config?.apiKey || ''}` },
+                    body: JSON.stringify({
+                        model: config.models.scan,
+                        messages: [{ role: 'user', content: `从以下文本中提取5-8个关键词和一句话概括(20字内)。严格按JSON输出，不要其他内容：{"keywords":["词1","词2"],"gist":"一句话概括"}\n\n${synthesis.substring(0, 2000)}` }],
+                        temperature: 0, max_tokens: 200, stream: false
+                    })
+                });
+                const data = await resp.json();
+                const raw = data.choices?.[0]?.message?.content || '';
+                const jsonMatch = raw.match(/\{[\s\S]*\}/);
+                if (!jsonMatch) return;
+                const parsed = JSON.parse(jsonMatch[0]);
+
+                index.push({
+                    id: sessionId,
+                    title: session.title || session.data.title || '',
+                    keywords: parsed.keywords || [],
+                    gist: parsed.gist || '',
+                    synthesis: synthesis.substring(0, 1500),
+                    timestamp: Date.now()
+                });
+                saveMemoryIndex(index);
+            } catch(e) { console.error('Memory index build failed', e); }
+        }
+
+        function findRelevantMemory(userInput) {
+            if (!userInput || userInput.length < 4) return null;
+            const index = getMemoryIndex();
+            if (index.length === 0) return null;
+
+            // Simple keyword overlap scoring
+            const inputChars = userInput.toLowerCase();
+            const scored = index.map(entry => {
+                let score = 0;
+                (entry.keywords || []).forEach(kw => {
+                    if (inputChars.includes(kw.toLowerCase())) score += 3;
+                });
+                // Title match
+                if (entry.title && inputChars.includes(entry.title.substring(0, 8).toLowerCase())) score += 2;
+                // Gist overlap
+                if (entry.gist) {
+                    const gistChars = entry.gist.toLowerCase();
+                    // Count shared 2-grams
+                    for (let i = 0; i < inputChars.length - 1; i++) {
+                        if (gistChars.includes(inputChars.substring(i, i + 2))) score += 0.1;
+                    }
+                }
+                return { ...entry, score };
+            }).filter(e => e.score >= 2).sort((a, b) => b.score - a.score);
+
+            if (scored.length === 0) return null;
+            const top = scored.slice(0, 2);
+            return top.map(e => `--- 「${e.title}」(${new Date(e.timestamp).toLocaleDateString('zh-CN')}) ---\n${e.synthesis}`).join('\n\n');
+        }
+
+        // v6.0: saveSessionToVault takes a session parameter
+        async function saveSessionToVault(session) {
+            if (!vaultHandle || !session.data.id) return;
+            const filename = `Campfire_${session.data.id}.json`;
+            try {
+                const dir = await getSessionsDir();
+                const fileHandle = await dir.getFileHandle(filename, { create: true });
+                const writable = await fileHandle.createWritable();
+                await writable.write(JSON.stringify(session.data, null, 2));
+                await writable.close();
+                loadVaultHistoryDebounced();
+                showToast('已保存到档案库');
+                buildMemoryEntry(session).catch(() => {});
+            } catch(e) { console.error("Save failed", e); showToast('档案库保存失败'); }
+        }
+
+        // ==========================================
+        // 17. V6.0 CLEANUP OLD SESSIONS (DOM only)
+        // ==========================================
+        function cleanupOldSessions() {
+            const MAX_DOM_SESSIONS = 8;
+            const allSessions = Array.from(sessionManager.sessions.values());
+            if (allSessions.length <= MAX_DOM_SESSIONS) return;
+
+            // Find completed/failed sessions beyond the limit (keep newest)
+            const finishedSessions = allSessions
+                .filter(s => s.status === 'complete' || s.status === 'failed')
+                .sort((a, b) => {
+                    // Sort by creation time (id contains timestamp)
+                    return a.id.localeCompare(b.id);
+                });
+
+            const toRemove = finishedSessions.slice(0, finishedSessions.length - MAX_DOM_SESSIONS + sessionManager.runningSessions.size + sessionManager.sessionQueue.length);
+
+            toRemove.forEach(s => {
+                if (s.id === sessionManager.activeSessionId) return;
+                if (s.logContainerEl) s.logContainerEl.remove();
+                if (s.renderContainerEl) s.renderContainerEl.remove();
+                if (s.tabEl) s.tabEl.remove();
+                // Clean up pin text store for this session
+                for (const key of _logPinTextStore.keys()) {
+                    if (key.startsWith(s.id)) {
+                        _logPinTextStore.delete(key);
+                    }
+                }
+                sessionManager.sessions.delete(s.id);
+            });
+        }
+
+        // ==========================================
+        // 18. V6.0 UI SETTINGS & INIT
+        // ==========================================
+        function loadUI() {
+            document.getElementById('baseUrl').value = config?.baseUrl || '';
+            document.getElementById('apiKey').value = config?.apiKey || '';
+            document.getElementById('modelAlpha').value = config?.models?.alpha || '';
+            document.getElementById('modelBeta').value = config?.models?.beta || '';
+            document.getElementById('modelScan').value = config?.models?.scan || '';
+            document.getElementById('modelJudge').value = config?.models?.judge || '';
+            document.getElementById('modelSearch').value = config?.models?.search || '';
+            updateSearchChip();
+            document.getElementById('promptAlpha').value = directives?.alpha || '';
+            document.getElementById('promptScan').value = directives?.scan || '';
+            document.getElementById('promptJudge').value = directives?.judge || '';
+            document.getElementById('maxConcurrency').value = sessionManager.maxConcurrency.toString();
+        }
+
+        function showToast(msg) {
+            const t = document.createElement('div');
+            t.textContent = msg;
+            t.style.cssText = 'position:fixed;top:24px;left:50%;transform:translateX(-50%);background:#1a1a1a;color:#aaa;border:1px solid #333;padding:8px 16px;border-radius:8px;font-size:11px;z-index:9999;transition:opacity 0.4s;';
+            document.body.appendChild(t);
+            setTimeout(() => { t.style.opacity = '0'; setTimeout(() => t.remove(), 400); }, 1800);
+        }
+
+        function saveSettings() {
+            config = {
+                baseUrl: document.getElementById('baseUrl').value.trim(),
+                apiKey: document.getElementById('apiKey').value.trim(),
+                models: {
+                    alpha: document.getElementById('modelAlpha').value.trim(),
+                    beta: document.getElementById('modelBeta').value.trim(),
+                    scan: document.getElementById('modelScan').value.trim(),
+                    judge: document.getElementById('modelJudge').value.trim(),
+                    search: document.getElementById('modelSearch').value.trim()
+                },
+                searchEnabled: config.searchEnabled,
+                vaultName: vaultHandle ? vaultHandle.name : null
+            };
+            directives = {
+                alpha: document.getElementById('promptAlpha').value.trim(),
+                scan: document.getElementById('promptScan').value.trim(),
+                judge: document.getElementById('promptJudge').value.trim()
+            };
+            sessionManager.maxConcurrency = parseInt(document.getElementById('maxConcurrency').value) || 1;
+            localStorage.setItem('campfire_secrets', JSON.stringify(config));
+            localStorage.setItem('campfire_directives_v5_2', JSON.stringify(directives));
+            localStorage.setItem('campfire_concurrency', sessionManager.maxConcurrency.toString());
+            saveConfigToVault();
+            drainQueue();
+        }
+
+        // Prompt import/export
+        document.getElementById('resetDefaultsBtn').onclick = () => {
+            if (!confirm('恢复默认模型配置和提示词？当前面板内容将被覆盖。关闭面板时会自动保存。')) return;
+            config.models = { ...CONFIG_DEFAULTS.models };
+            directives = { ...SYSTEM_PROMPTS };
+            loadUI();
+        };
+
+        // Global config import/export
+        document.getElementById('exportGlobalBtn').onclick = () => {
+            const data = { secrets: config, directives: directives };
+            const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })); a.download = 'campfire_global_backup.json'; a.click();
+        };
+        document.getElementById('importGlobalBtn').onclick = () => document.getElementById('importGlobalInput').click();
+        document.getElementById('importGlobalInput').onchange = (e) => {
+            if(e.target.files.length === 0) return;
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+                try {
+                    const d = JSON.parse(ev.target.result);
+                    if(d.secrets && d.directives) {
+                        localStorage.setItem('campfire_secrets', JSON.stringify(d.secrets));
+                        localStorage.setItem('campfire_directives_v5_2', JSON.stringify(d.directives));
+                        config = d.secrets; directives = d.directives; loadUI();
+                        showToast('配置已导入');
+                    } else if (d.alpha || d.judge) {
+                        // Legacy prompt-only import
+                        if(d.alpha) document.getElementById('promptAlpha').value = d.alpha;
+                        if(d.scan) document.getElementById('promptScan').value = d.scan;
+                        if(d.judge) document.getElementById('promptJudge').value = d.judge;
+                        showToast('提示词已导入，关闭设置面板后生效');
+                    } else { showToast('无法识别的配置文件'); }
+                } catch(err) { alert("JSON 解析失败。"); }
+            };
+            reader.readAsText(e.target.files[0]); e.target.value = '';
+        };
+
+        // Vault mount
+        document.getElementById('mountVaultBtnSetting').onclick = mountVault;
+
+        // Connection test
+        document.getElementById('testConnectionBtn').onclick = async () => {
+            const btn = document.getElementById('testConnectionBtn');
+            const url = document.getElementById('baseUrl').value.trim();
+            const key = document.getElementById('apiKey').value.trim();
+            const model = document.getElementById('modelAlpha').value.trim() || (config.models?.alpha || 'claude-opus-4-6');
+            if (!url || !key) { showToast('请先填写 API 地址和 Key'); return; }
+            btn.textContent = '测试中...'; btn.disabled = true;
+            try {
+                const res = await fetch(`${url}/chat/completions`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
+                    body: JSON.stringify({ model, messages: [{ role: 'user', content: 'hi' }], max_tokens: 1, stream: false })
+                });
+                showToast(res.ok || res.status === 400 ? `✅ 连接正常 (${res.status})` : `❌ 错误 ${res.status}`);
+            } catch(e) { showToast('❌ 连接失败: ' + e.message); }
+            finally { btn.textContent = '⚡ 测试'; btn.disabled = false; }
+        };
+
+        // New session button
+        document.getElementById('newSessionBtn').onclick = handleNewSession;
+
+        // Search chip in input area
+        function updateSearchChip() {
+            const chip = document.getElementById('searchChip');
+            const hasModel = !!(config.models?.search);
+            if (!hasModel) {
+                chip.className = 'input-chip disabled';
+                chip.title = '联网搜索 — 请先在 ⚙ 设置 中填写搜索模型 ID';
+                chip.textContent = '🌐 联网';
+            } else if (config.searchEnabled) {
+                chip.className = 'input-chip active';
+                chip.title = `联网搜索已启用 (${config.models.search})`;
+                chip.textContent = `🌐 ${config.models.search.split('-').slice(0,2).join('-')}`;
+            } else {
+                chip.className = 'input-chip';
+                chip.title = '点击启用联网搜索';
+                chip.textContent = '🌐 联网';
+            }
+        }
+        document.getElementById('searchChip').addEventListener('click', () => {
+            if (!config.models?.search) {
+                document.getElementById('settingsPanel').classList.add('open');
+                const el = document.getElementById('modelSearch');
+                el.focus(); el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+                showToast('请填写搜索模型 ID 以启用联网');
+                return;
+            }
+            config.searchEnabled = !config.searchEnabled;
+            localStorage.setItem('campfire_secrets', JSON.stringify(config));
+            localStorage.setItem('campfire_search_on', config.searchEnabled ? '1' : '0');
+            updateSearchChip();
+        });
+        updateSearchChip();
+
+        // History panel
+        const historyPanel = document.getElementById('historyPanel');
+        document.getElementById('toggleHistory').onclick = async () => {
+            historyPanel.classList.toggle('open');
+            // Auto-restore vault access on first user gesture if needed
+            if (vaultHandle && historyPanel.classList.contains('open')) {
+                if (await verifyPermission(vaultHandle, true)) {
+                    await initVaultStructure();
+                    updateVaultStatus(true);
+                    loadVaultHistory();
+                    loadMemoryIndex();
+                }
+            }
+        };
+        document.getElementById('closeHistory').onclick = () => historyPanel.classList.remove('open');
+
+        // Mode toggle
+        const modeToggle = document.getElementById('modeToggle'), toggleText = document.getElementById('toggleText'), roundSelector = document.getElementById('roundSelectorWrapper'), logoIcon = document.getElementById('logoIcon');
+        document.getElementById('modeToggleWrapper').onclick = (e) => { if(e.target !== modeToggle) modeToggle.click(); };
+        modeToggle.addEventListener('change', (e) => {
+            if(e.target.checked) {
+                roundSelector.classList.remove('hidden'); roundSelector.classList.add('flex');
+                toggleText.innerText = '篝火模式'; toggleText.className = 'text-orange-500 ml-1';
+                logoIcon.innerText = '🔥'; logoIcon.className = 'text-2xl animate-pulse text-orange-600';
+            } else {
+                roundSelector.classList.add('hidden'); roundSelector.classList.remove('flex');
+                toggleText.innerText = '极简模式'; toggleText.className = 'text-blue-400 ml-1';
+                logoIcon.innerText = '⚡'; logoIcon.className = 'text-2xl text-blue-500';
+            }
+        });
+
+        // Settings panel
+        document.getElementById('toggleSettings').onclick = () => document.getElementById('settingsPanel').classList.add('open');
+        document.getElementById('closeSettings').onclick = () => {
+            saveSettings();
+            updateSearchChip();
+            showToast('配置已保存');
+            document.getElementById('settingsPanel').classList.remove('open');
+        };
+
+        // IGNITE button and Enter key
+        document.getElementById('sendBtn').onclick = handleIgnite;
+        document.getElementById('userInput').addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleIgnite(); }
+        });
+        // Round selector syncs to active session
+        document.getElementById('maxRounds').addEventListener('change', function() {
+            const session = getActiveSession();
+            if (session) session.maxRounds = parseInt(this.value);
+        });
+
+        // ==========================================
+        // 19. V6.0 EVENT DELEGATION FOR RENDER & LOG AREAS
+        // ==========================================
+
+        // Copy block buttons on synthesis render
+        document.getElementById('sessionRenderHost').addEventListener('click', async (e) => {
+            // Edit question & re-run
+            if (e.target.classList.contains('edit-question-btn')) {
+                const sessionId = e.target.closest('.user-msg-block')?.getAttribute('data-session-id');
+                const session = sessionManager.sessions.get(sessionId);
+                if (!session || session.status === 'running') return;
+                const original = e.target.getAttribute('data-original');
+                const inp = document.getElementById('userInput');
+                inp.value = original;
+                inp.focus();
+                showToast('已填入原始问题，修改后按 Enter 重新执行');
+                return;
+            }
+            // Follow-up button — focus input
+            if (e.target.classList.contains('followup-btn')) {
+                const inp = document.getElementById('userInput');
+                inp.focus();
+                inp.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                return;
+            }
+            // Remove pinned excerpt
+            if (e.target.classList.contains('pin-remove-btn')) {
+                const pinId = e.target.getAttribute('data-pin-id');
+                const el = document.getElementById(pinId);
+                if (el) el.remove();
+                return;
+            }
+            // Export synthesis
+            if (e.target.classList.contains('synthesis-export-btn')) {
+                const runId = e.target.getAttribute('data-runid');
+                const sessionId = e.target.getAttribute('data-sessionid');
+                const session = sessionManager.sessions.get(sessionId);
+                if (session) {
+                    const md = session.data.rawMarkdownMap[runId];
+                    if (md) await exportToVault(md, makeExportFilename(session, '结论'));
+                }
+                return;
+            }
+            // Copy block
+            if (e.target.classList.contains('copy-block-btn')) {
+                const runId = e.target.getAttribute('data-runid');
+                const sessionId = e.target.getAttribute('data-sessionid');
+                const session = sessionManager.sessions.get(sessionId);
+                if (session) {
+                    const md = session.data.rawMarkdownMap[runId];
+                    if(md) {
+                        navigator.clipboard.writeText(md);
+                        const originalText = e.target.innerText;
+                        e.target.innerText = "✅ 已复制";
+                        e.target.classList.add('bg-green-700', 'text-white');
+                        setTimeout(() => { e.target.innerText = originalText; e.target.classList.remove('bg-green-700', 'text-white'); }, 2000);
+                    }
+                }
+            }
+            // Regenerate synthesis
+            if (e.target.classList.contains('regen-btn')) {
+                const runId = e.target.getAttribute('data-runid');
+                const sessionId = e.target.getAttribute('data-sessionid');
+                const session = sessionManager.sessions.get(sessionId);
+                if (!session || !session._judgeInputs) { showToast('无法重新生成：缺少上下文'); return; }
+                const inputs = session._judgeInputs;
+                const model = inputs.isSimple ? config.models.alpha : config.models.judge;
+                const targetId = `render_${session.id}_${inputs.runId}`;
+                const targetEl = document.getElementById(targetId);
+                if (!targetEl) return;
+                targetEl.innerHTML = '<p class="text-gray-500 text-xs animate-pulse">重新生成中...</p>';
+                e.target.disabled = true;
+                e.target.textContent = '⏳ 生成中';
+                (async () => {
+                    try {
+                        const msgs = inputs.isSimple ? inputs.history : [{ role: 'user', content: inputs.userMsg }];
+                        const result = await callModelStream(model, inputs.sysPrompt, msgs, (c, ft) => {
+                            targetEl.innerHTML = marked.parse(ft, { gfm: true, breaks: true });
+                        }, new AbortController().signal);
+                        session.data.rawMarkdownMap[inputs.runId] = result;
+                        session.data.last_synthesis = result;
+                        renderSynthesisAsBlocks(session, result, inputs.runId, {});
+                        showToast(`已用 ${model} 重新生成`);
+                    } catch(err) { showToast('重新生成失败: ' + err.message); }
+                    finally { e.target.disabled = false; e.target.textContent = '🔄 重新生成'; }
+                })();
+            }
+        });
+
+        // Pin/copy icon buttons on crucible log stream boxes
+        // Also handles stream-collapse-toggle via event delegation
+        document.getElementById('crucibleLogHost').addEventListener('keydown', (e) => {
+            if (e.target.classList.contains('clarify-input') && e.key === 'Enter') {
+                const btn = e.target.parentElement.querySelector('.clarify-submit');
+                if (btn) btn.click();
+            }
+        });
+        document.getElementById('crucibleLogHost').addEventListener('click', (e) => {
+            // Clarify submit
+            if (e.target.classList.contains('clarify-submit')) {
+                const sessionId = e.target.getAttribute('data-session-id');
+                const session = sessionManager.sessions.get(sessionId);
+                if (!session || !session._clarifyState) return;
+                const inputEl = session.logContainerEl.querySelector('.clarify-input');
+                const extra = inputEl ? inputEl.value.trim() : '';
+                if (!extra) { showToast('请输入补充内容'); return; }
+                const cs = session._clarifyState;
+                session._clarifyState = null;
+                // Append clarification to user input and restart from round 1
+                session.userInput = cs.userInput + '\n\n[补充说明] ' + extra;
+                appendToLogWithSmartScroll(session, `<p class="text-yellow-300 mt-2 text-[10px]">已补充: ${escapeHtml(extra)}</p>`);
+                startSession(session.id);
+                return;
+            }
+            // Clarify skip — continue without clarification
+            if (e.target.classList.contains('clarify-skip')) {
+                const sessionId = e.target.getAttribute('data-session-id');
+                const session = sessionManager.sessions.get(sessionId);
+                if (!session || !session._clarifyState) return;
+                const cs = session._clarifyState;
+                session._clarifyState = null;
+                // Store as checkpoint and resume from next step
+                session._checkpoint = { phase: 'scan', round: cs.round, runId: cs.runId, startTime: cs.startTime, sysAlpha: cs.sysAlpha, sysBeta: cs.sysBeta, sysJudge: cs.sysJudge, historyA: cs.historyA, historyB: cs.historyB, finalA: cs.finalA, finalB: cs.finalB, scanReport: cs.scanReport, actualRounds: cs.actualRounds, finalEntropy: cs.finalEntropy, userInput: cs.userInput, maxRounds: cs.maxRounds };
+                appendToLogWithSmartScroll(session, `<p class="text-gray-500 mt-2 text-[10px]">跳过澄清，继续分析...</p>`);
+                // Resume: go to next round or judge
+                if (cs.finalEntropy < 4) {
+                    // Converged, go straight to judge
+                    session._checkpoint.phase = 'judge';
+                }
+                resumeFromCheckpoint(session.id);
+                return;
+            }
+            // Clarify input Enter key
+            if (e.target.classList.contains('clarify-input') && e.type === 'keydown') return;
+            // Resume button
+            if (e.target.classList.contains('resume-btn')) {
+                const sessionId = e.target.getAttribute('data-session-id');
+                e.target.disabled = true;
+                e.target.textContent = '⏳ 恢复中...';
+                resumeFromCheckpoint(sessionId);
+                return;
+            }
+            if (e.target.classList.contains('log-copy-btn')) {
+                const btnId = e.target.getAttribute('data-btn-id');
+                const rawText = _logPinTextStore.get(btnId) || '';
+                navigator.clipboard.writeText(rawText).then(() => {
+                    const prev = e.target.textContent;
+                    e.target.textContent = '✓';
+                    e.target.style.color = '#22c55e';
+                    setTimeout(() => { e.target.textContent = prev; e.target.style.color = ''; }, 1200);
+                }).catch(() => {});
+            }
+            if (e.target.classList.contains('log-pin-btn')) {
+                const btnId = e.target.getAttribute('data-btn-id');
+                const rawText = _logPinTextStore.get(btnId) || '';
+                const label = e.target.getAttribute('data-label');
+                const sessionId = e.target.getAttribute('data-session-id');
+                const session = sessionManager.sessions.get(sessionId);
+                if (session) {
+                    pinToRightPanel(session, label, rawText);
+                    const prev = e.target.textContent;
+                    e.target.textContent = '✓';
+                    e.target.style.color = '#22c55e';
+                    e.target.style.borderColor = '#22c55e';
+                    setTimeout(() => { e.target.textContent = prev; e.target.style.color = ''; e.target.style.borderColor = ''; }, 1200);
+                }
+            }
+            // Collapse toggle via event delegation
+            if (e.target.classList.contains('stream-collapse-toggle')) {
+                const wrapper = e.target.closest('.stream-collapse-wrapper');
+                if (wrapper) {
+                    const isCollapsed = wrapper.classList.toggle('collapsed');
+                    const charCount = parseInt(e.target.getAttribute('data-charcount') || '0');
+                    e.target.textContent = isCollapsed
+                        ? `\u25bc 展开全文 (${charCount.toLocaleString()}字)`
+                        : `\u25b2 收起`;
+                }
+            }
+        });
+
+        // Export buttons (session-contextual)
+        async function getExportsDir() {
+            if (!vaultHandle) return null;
+            try { return await vaultHandle.getDirectoryHandle('exports', { create: true }); }
+            catch(e) { return null; }
+        }
+
+        function makeExportFilename(session, type) {
+            const title = (session.title || '未命名').replace(/[\\/:*?"<>|]/g, '_').substring(0, 30);
+            const date = new Date().toISOString().slice(0, 10);
+            return `${date}_${title}_${type}.md`;
+        }
+
+        async function exportToVault(content, filename) {
+            const dir = await getExportsDir();
+            if (!dir) {
+                // Vault not mounted, fall back to file picker
+                try {
+                    const h = await window.showSaveFilePicker({ suggestedName: filename, types: [{ accept: { 'text/markdown': ['.md'] } }] });
+                    const w = await h.createWritable(); await w.write(content); await w.close();
+                } catch(e) { if(e.name !== 'AbortError') showToast('导出失败'); }
+                return;
+            }
+            try {
+                const fh = await dir.getFileHandle(filename, { create: true });
+                const w = await fh.createWritable(); await w.write(content); await w.close();
+                showToast(`已导出到 exports/${filename}`);
+            } catch(e) { showToast('导出失败: ' + e.message); }
+        }
+
+        document.getElementById('exportFullBtn').onclick = async () => {
+            const session = getActiveSession();
+            const md = session?.data?.full_conversation;
+            if(!md || md === "# Campfire 推演账本\n\n") return showToast('暂无对话记录');
+            await exportToVault(md, makeExportFilename(session, '全文'));
+        };
+
+        // ==========================================
+        // 20. V6.0 RESIZABLE PANELS
+        // ==========================================
+        function setupResizeHandle(handleEl, leftEl, rightEl) {
+            let startX, startLeftWidth, startRightWidth;
+
+            handleEl.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                startX = e.clientX;
+                startLeftWidth = leftEl.getBoundingClientRect().width;
+                startRightWidth = rightEl.getBoundingClientRect().width;
+                document.body.style.cursor = 'col-resize';
+                document.body.style.userSelect = 'none';
+
+                const onMouseMove = (e) => {
+                    const dx = e.clientX - startX;
+                    const totalWidth = startLeftWidth + startRightWidth;
+                    const newLeftWidth = Math.max(200, Math.min(totalWidth - 200, startLeftWidth + dx));
+                    const newRightWidth = totalWidth - newLeftWidth;
+                    leftEl.style.flex = `0 0 ${newLeftWidth}px`;
+                    rightEl.style.flex = `0 0 ${newRightWidth}px`;
+                };
+
+                const onMouseUp = () => {
+                    document.body.style.cursor = '';
+                    document.body.style.userSelect = '';
+                    document.removeEventListener('mousemove', onMouseMove);
+                    document.removeEventListener('mouseup', onMouseUp);
+                };
+
+                document.addEventListener('mousemove', onMouseMove);
+                document.addEventListener('mouseup', onMouseUp);
+            });
+        }
+
+        // ==========================================
+        // 21. V6.0 INITIALIZATION
+        // ==========================================
+        // Populate model datalist
+        const _dl = document.getElementById('modelList');
+        MODEL_REGISTRY.forEach(m => { const o = document.createElement('option'); o.value = m; _dl.appendChild(o); });
+
+        loadUI();
+        autoMountOnLoad();
+
+        // Draft persistence: restore on load, autosave on type, clear on send
+        const _savedDraft = localStorage.getItem('campfire_input_draft');
+        if (_savedDraft) document.getElementById('userInput').value = _savedDraft;
+        let _draftTimer;
+        document.getElementById('userInput').addEventListener('input', () => {
+            clearTimeout(_draftTimer);
+            _draftTimer = setTimeout(() => localStorage.setItem('campfire_input_draft', document.getElementById('userInput').value), 500);
+        });
+
+        // Setup resize handle between crucible and right panel
+        setupResizeHandle(
+            document.getElementById('resizeHandle'),
+            document.getElementById('crucibleSection'),
+            document.getElementById('rightPanel')
+        );
+
+        // v6.0 Workspace model: create initial empty session on page load
+        const initialSession = createSession('', true, 3, true);
+        switchToSession(initialSession.id);
+    </script>
+</body>
+</html>
