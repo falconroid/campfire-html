@@ -2989,15 +2989,29 @@
                 // Cache immediately — before vault write so button state is correct even if save fails
                 session._lastPresentHash = sourceHash;
                 session._lastPresentHtml = html;
-                // Save as HTML
-                const filename = makeExportFilename(session, '演示', 'html');
+                // Save as HTML with auto-versioning
+                const baseFilename = makeExportFilename(session, '演示', 'html');
                 const dir = await getExportsDir();
+                let savedFilename = baseFilename;
                 if (dir) {
-                    const fh = await dir.getFileHandle(filename, { create: true });
+                    const base = baseFilename.replace(/\.html$/, '');
+                    const existing = [];
+                    for await (const entry of dir.values()) {
+                        if (entry.kind === 'file' && entry.name.startsWith(base) && entry.name.endsWith('.html')) existing.push(entry.name);
+                    }
+                    if (existing.length > 0) {
+                        let version = 2;
+                        for (const name of existing) {
+                            const vMatch = name.match(/_v(\d+)\.html$/);
+                            if (vMatch) version = Math.max(version, parseInt(vMatch[1]) + 1);
+                        }
+                        savedFilename = `${base}_v${version}.html`;
+                    }
+                    const fh = await dir.getFileHandle(savedFilename, { create: true });
                     const w = await fh.createWritable(); await w.write(html); await w.close();
                 }
                 openHtmlInTab(html);
-                showToast(dir ? `HTML 已保存到 exports/${filename}，已在新标签打开` : 'HTML 演示已在新标签打开');
+                showToast(dir ? `HTML 已保存到 exports/${savedFilename}，已在新标签打开` : 'HTML 演示已在新标签打开');
             } catch(e) { showToast('生成失败: ' + e.message, 3000); }
             finally {
                 clearInterval(genTimer);
