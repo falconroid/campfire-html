@@ -1990,6 +1990,8 @@
             sessionManager.sessions.set(id, session);
             updateTabState(session);
             switchToSession(id);
+            // Scroll right panel to bottom to show latest content
+            requestAnimationFrame(() => { renderDiv.scrollTop = renderDiv.scrollHeight; });
 
             document.getElementById('historyPanel').classList.remove('open');
         }
