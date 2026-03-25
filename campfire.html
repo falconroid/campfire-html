@@ -264,7 +264,7 @@
             <div id="sessionExportBtns" class="flex gap-1.5 shrink-0 px-2">
                 <button id="exportFullBtn" class="flex-1 bg-gray-800 hover:bg-gray-700 py-2.5 rounded-lg text-[10px] font-bold transition text-gray-400 border border-gray-700">📚 导出对话</button>
                 <button id="exportStructBtn" class="flex-1 bg-gray-800 hover:bg-gray-700 py-2.5 rounded-lg text-[10px] font-bold transition text-gray-400 border border-gray-700">📋 结构化归档</button>
-                <button id="exportPresentBtn" class="flex-1 bg-gray-800 hover:bg-gray-700 py-2.5 rounded-lg text-[10px] font-bold transition text-gray-400 border border-gray-700">🎬 生成演示</button>
+                <button id="exportPresentBtn" class="flex-1 bg-gray-800 hover:bg-gray-700 py-2.5 rounded-lg text-[10px] font-bold transition text-gray-400 border border-gray-700">🎬 生成 HTML 演示</button>
             </div>
         </section>
     </main>
@@ -2851,7 +2851,10 @@
             if (session._lastPresentHash === sourceHash) { showToast('源内容无变化，无需重新生成'); return; }
             const writerModel = config.models.writer || 'claude-sonnet-4-6';
             const btn = document.getElementById('exportPresentBtn');
-            btn.disabled = true; btn.textContent = '⏳ 生成中...';
+            btn.disabled = true;
+            let genSecs = 0;
+            btn.textContent = `⏳ HTML 生成中… 0s`;
+            const genTimer = setInterval(() => { genSecs++; btn.textContent = `⏳ HTML 生成中… ${genSecs}s`; }, 1000);
             try {
                 const c = collectSessionContent(session);
                 const input = `标题: ${c.title}\n分析指标: ${c.metrics}\n\n原始问题:\n${c.questions.join('\n---\n')}\n\n最终结论 (最后一轮，置信度最高):\n${c.syntheses[c.syntheses.length - 1] || c.syntheses.join('\n\n')}`;
@@ -2872,14 +2875,16 @@
                 if (dir) {
                     const fh = await dir.getFileHandle(filename, { create: true });
                     const w = await fh.createWritable(); await w.write(html); await w.close();
-                    showToast(`已导出到 exports/${filename}`);
+                    showToast(`HTML 已导出 exports/${filename}，正在浏览器中打开…`);
+                } else {
+                    showToast('HTML 演示生成完成，正在浏览器中打开…');
                 }
                 // Preview in new tab
                 const blob = new Blob([html], { type: 'text/html' });
                 window.open(URL.createObjectURL(blob), '_blank');
                 session._lastPresentHash = sourceHash;
             } catch(e) { showToast('生成失败: ' + e.message); }
-            finally { btn.disabled = false; btn.textContent = '🎬 生成演示'; }
+            finally { clearInterval(genTimer); btn.disabled = false; btn.textContent = '🎬 生成 HTML 演示'; }
         };
 
         // ==========================================
