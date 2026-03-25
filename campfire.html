@@ -2911,7 +2911,7 @@
             const res = await fetch(`${(config?.baseUrl || '').replace(/\/+$/, '')}/chat/completions`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${config?.apiKey || ''}` },
-                body: JSON.stringify({ model, messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userContent }], temperature: 0.3, stream: false })
+                body: JSON.stringify({ model, messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userContent }], temperature: 0.3, max_tokens: 16000, stream: false })
             });
             if (!res.ok) throw new Error(`API ${res.status}`);
             const data = await res.json();
