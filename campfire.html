@@ -645,6 +645,8 @@
                 updateMetricsForSession(session);
                 // Update pending bar
                 updatePendingBar(session);
+                // Update present button state
+                updatePresentBtnState(session);
             }
         }
 
@@ -988,7 +990,7 @@
             session.phase = '启动中...';
             sessionManager.runningSessions.add(sessionId);
             updateTabState(session);
-            if (session.id === sessionManager.activeSessionId) updateHeaderForSession(session);
+            if (session.id === sessionManager.activeSessionId) { updateHeaderForSession(session); updatePresentBtnState(session); }
 
             // Run ignition (async, no await — fires and forgets, drainQueue on finish)
             runIgnition(session.id).catch(() => {});
@@ -1018,7 +1020,7 @@
                 session.status = 'failed';
                 session.phase = '已取消';
                 updateTabState(session);
-                if (session.id === sessionManager.activeSessionId) updateHeaderForSession(session);
+                if (session.id === sessionManager.activeSessionId) { updateHeaderForSession(session); updatePresentBtnState(session); }
                 appendToLogWithSmartScroll(session, `<p class="text-red-500 font-bold mt-4">会话已从队列中移除。</p>`);
             } else if (session.status === 'running') {
                 session._userStopped = true; // flag for catch block
@@ -1574,7 +1576,7 @@
                     sessionManager.runningSessions.delete(sessionId);
                     session._roundProgress = null;
                     updateTabState(session);
-                    if (session.id === sessionManager.activeSessionId) updateHeaderForSession(session);
+                    if (session.id === sessionManager.activeSessionId) { updateHeaderForSession(session); updatePresentBtnState(session); }
                     drainQueue();
                 } else {
                     stopSessionTimer(session);
@@ -2259,6 +2261,28 @@
             document.getElementById('maxConcurrency').value = sessionManager.maxConcurrency.toString();
         }
 
+        function openHtmlInTab(html) {
+            const blob = new Blob([html], { type: 'text/html' });
+            const blobUrl = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = blobUrl; a.target = '_blank'; a.rel = 'noopener';
+            document.body.appendChild(a); a.click(); document.body.removeChild(a);
+            setTimeout(() => URL.revokeObjectURL(blobUrl), 3000);
+        }
+
+        function updatePresentBtnState(session) {
+            const btn = document.getElementById('exportPresentBtn');
+            if (!btn || btn.disabled) return;
+            if (!session?.data?.blocks?.length) return;
+            const c = collectSessionContent(session);
+            const currentHash = hashStr(c.syntheses.join('|') + c.questions.join('|'));
+            if (session._lastPresentHash === currentHash && session._lastPresentHtml) {
+                btn.textContent = '📂 打开演示';
+            } else {
+                btn.textContent = '🎬 生成 HTML 演示';
+            }
+        }
+
         function showToast(msg, duration = 2000) {
             const t = document.createElement('div');
             t.textContent = msg;
@@ -2924,10 +2948,15 @@
         document.getElementById('exportPresentBtn').onclick = async (e) => {
             const session = getActiveSession();
             if (!session?.data?.last_synthesis) return showToast('暂无分析结论');
-            // Dedup: skip LLM if source material unchanged since last export (Shift+Click to force)
             const c = collectSessionContent(session);
             const sourceHash = hashStr(c.syntheses.join('|') + c.questions.join('|'));
-            if (!e.shiftKey && session._lastPresentHash === sourceHash) { showToast('内容未更新，已跳过重新生成 (Shift+点击可强制重新生成)'); return; }
+
+            // If content unchanged and we have cached HTML: just open, skip LLM
+            if (!e.shiftKey && session._lastPresentHash === sourceHash && session._lastPresentHtml) {
+                openHtmlInTab(session._lastPresentHtml);
+                return;
+            }
+
             const writerModel = config.models.writer || 'claude-sonnet-4-6';
             const btn = document.getElementById('exportPresentBtn');
             btn.disabled = true;
@@ -2935,7 +2964,6 @@
             btn.textContent = `⏳ HTML 生成中… 0s`;
             const genTimer = setInterval(() => { genSecs++; btn.textContent = `⏳ HTML 生成中… ${genSecs}s`; }, 1000);
             try {
-                const c = collectSessionContent(session);
                 const input = `标题: ${c.title}\n日期: ${c.date}\n分析指标: ${c.metrics}\n\n原始问题 (按时间顺序):\n${c.questions.join('\n---\n')}\n\n各轮综合结论 (后面的结论经过更多轮辩论，置信度更高):\n${c.syntheses.join('\n\n===\n\n')}`;
                 const html = await callModelSync(writerModel,
                     `将以下多轮分析对话转化为一个专业的演示 HTML 页面。
@@ -2956,21 +2984,16 @@
                     const fh = await dir.getFileHandle(filename, { create: true });
                     const w = await fh.createWritable(); await w.write(html); await w.close();
                 }
-                // Open in new tab — use <a> click to bypass popup blockers
-                const blob = new Blob([html], { type: 'text/html' });
-                const blobUrl = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = blobUrl;
-                a.target = '_blank';
-                a.rel = 'noopener';
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                setTimeout(() => URL.revokeObjectURL(blobUrl), 3000);
-                showToast(dir ? `HTML 已保存到 exports/${filename}，已在新标签打开` : 'HTML 演示已在新标签打开');
                 session._lastPresentHash = sourceHash;
+                session._lastPresentHtml = html;
+                openHtmlInTab(html);
+                showToast(dir ? `HTML 已保存到 exports/${filename}，已在新标签打开` : 'HTML 演示已在新标签打开');
             } catch(e) { showToast('生成失败: ' + e.message, 3000); }
-            finally { clearInterval(genTimer); btn.disabled = false; btn.textContent = '🎬 生成 HTML 演示'; }
+            finally {
+                clearInterval(genTimer);
+                btn.disabled = false;
+                updatePresentBtnState(session);
+            }
         };
 
         // ==========================================
