@@ -1508,10 +1508,19 @@
 
             } catch (err) {
                 if (err.name === 'AbortError') {
-                    session.status = 'failed';
-                    session.phase = '已取消';
-                    session._checkpoint = null;
-                    appendToLogWithSmartScroll(session, `<p class="text-red-500 mt-4 p-2 border border-red-900 bg-red-900/10 text-sm">会话已被用户取消。</p>`);
+                    if (session._userStopped) {
+                        session.status = 'complete';
+                        session._checkpoint = null;
+                        session._userStopped = false;
+                        appendToLogWithSmartScroll(session, `<p class="text-yellow-500 mt-4 p-2 border border-yellow-900 bg-yellow-900/10 text-sm">已停止，已生成内容已保留。</p>`);
+                        setSessionStatus(session, '已停止', 'done');
+                        await saveSessionToVault(session).catch(() => {});
+                    } else {
+                        session.status = 'failed';
+                        session.phase = '已取消';
+                        session._checkpoint = null;
+                        appendToLogWithSmartScroll(session, `<p class="text-red-500 mt-4 p-2 border border-red-900 bg-red-900/10 text-sm">会话已被用户取消。</p>`);
+                    }
                 } else if (session._checkpoint) {
                     session.status = 'interrupted';
                     session.phase = '已中断';
@@ -2535,6 +2544,7 @@
                 }
 
                 // 4. Fill input and focus
+                saveSessionIncremental(session);
                 const inp = document.getElementById('userInput');
                 inp.value = original;
                 inp.focus();
@@ -2913,9 +2923,12 @@
                 } else {
                     showToast('HTML 演示生成完成，正在浏览器中打开…');
                 }
-                // Preview in new tab
+                // Preview in new tab — revoke URL after load to avoid memory leak
                 const blob = new Blob([html], { type: 'text/html' });
-                window.open(URL.createObjectURL(blob), '_blank');
+                const blobUrl = URL.createObjectURL(blob);
+                const win = window.open(blobUrl, '_blank');
+                if (win) win.addEventListener('load', () => setTimeout(() => URL.revokeObjectURL(blobUrl), 1000));
+                else URL.revokeObjectURL(blobUrl);
                 session._lastPresentHash = sourceHash;
             } catch(e) { showToast('生成失败: ' + e.message); }
             finally { clearInterval(genTimer); btn.disabled = false; btn.textContent = '🎬 生成 HTML 演示'; }
