@@ -175,7 +175,6 @@
         <div id="statusCenter" class="hidden flex items-center justify-center shadow-lg transition-opacity duration-300">
             <span id="liveStatus" class="bg-orange-900/20 text-orange-500 border border-orange-900/50 text-xs font-bold uppercase tracking-widest px-4 py-1.5 rounded-l-md">等待点火</span>
             <span id="liveTimer" class="bg-gray-900 text-gray-300 border-t border-r border-b border-gray-800 text-xs font-mono font-bold px-4 py-1.5 rounded-r-md">00:00</span>
-            <button id="cancelActiveBtn" class="cancel-session-btn hidden">停止</button>
         </div>
 
         <div class="flex gap-4 items-center text-[10px] font-bold text-gray-500 uppercase">
@@ -230,14 +229,18 @@
             </div>
             <div class="flex flex-col gap-1.5 shrink-0">
                 <div class="flex gap-2 items-end">
-                    <textarea id="userInput" rows="2" placeholder="输入意图... (Enter / Ctrl+Enter 点火 | Shift+Enter 换行)" class="flex-grow bg-gray-900/80 p-3 rounded-lg border border-gray-700 focus:border-orange-600 outline-none transition text-white text-sm"></textarea>
-                    <button id="sendBtn" class="bg-orange-600 hover:bg-orange-500 px-8 py-4 rounded-lg font-black transition text-black h-[52px] shadow-lg">IGNITE</button>
+                    <textarea id="userInput" rows="2" placeholder="输入意图..." class="flex-grow bg-gray-900/80 p-3 rounded-lg border border-gray-700 focus:border-orange-600 outline-none transition text-white text-sm"></textarea>
+                    <div class="flex flex-col gap-1.5 h-[52px]">
+                        <button id="stopBtn" class="hidden bg-gray-800 hover:bg-red-900/40 border border-gray-600 hover:border-red-800 px-4 h-full rounded-lg font-black transition text-gray-300 hover:text-red-400 text-sm whitespace-nowrap">■ 停止</button>
+                        <button id="sendBtn" class="bg-orange-600 hover:bg-orange-500 px-8 h-full rounded-lg font-black transition text-black shadow-lg">IGNITE</button>
+                    </div>
                 </div>
                 <!-- Input chip toolbar -->
                 <div class="flex items-center gap-2 pl-0.5">
                     <button id="searchChip" title="联网搜索 — 在设置中配置搜索模型" class="input-chip">🌐 联网</button>
                     <button id="attachBtn" title="附加文件 (.txt, .md, .json, .csv 等)" class="input-chip">📎 附件</button>
                     <input type="file" id="attachInput" class="hidden" accept=".txt,.md,.markdown,.json,.csv,.xml,.html,.htm,.js,.ts,.py,.java,.c,.cpp,.h,.css,.yaml,.yml,.toml,.ini,.cfg,.log,.sql,.sh,.bat,.ps1,.r,.go,.rs,.rb,.php,.swift,.kt" multiple>
+                    <span class="ml-auto text-[9px] text-gray-700 select-none">Shift+⏎ 换行</span>
                 </div>
                 <div id="attachedFiles" class="flex flex-wrap gap-1.5 pl-0.5 empty:hidden"></div>
             </div>
@@ -650,8 +653,9 @@
             const statusCenter = document.getElementById('statusCenter');
             const liveStatus = document.getElementById('liveStatus');
             const liveTimer = document.getElementById('liveTimer');
-            const cancelBtn = document.getElementById('cancelActiveBtn');
             const roundsSelect = document.getElementById('maxRounds');
+            const sendBtn = document.getElementById('sendBtn');
+            const stopBtn = document.getElementById('stopBtn');
 
             // Sync round selector to this session
             roundsSelect.value = session.maxRounds.toString();
@@ -662,41 +666,51 @@
                 statusCenter.classList.add('flex');
                 liveStatus.innerText = session.phase;
                 liveTimer.innerText = formatTime(session.secondsElapsed);
-                cancelBtn.classList.remove('hidden');
-                cancelBtn.onclick = () => { stopSession(session.id); };
                 setStatusStyle(liveStatus, session.phase.includes('缝合') ? 'pulse' : 'normal');
-            } else if (session.status === 'complete') {
-                statusCenter.classList.remove('hidden');
-                statusCenter.classList.add('flex');
-                liveStatus.innerText = '合成完毕';
-                liveTimer.innerText = formatTime(session.secondsElapsed);
-                cancelBtn.classList.add('hidden');
-                setStatusStyle(liveStatus, 'done');
-            } else if (session.status === 'failed') {
-                statusCenter.classList.remove('hidden');
-                statusCenter.classList.add('flex');
-                liveStatus.innerText = '系统异常';
-                liveTimer.innerText = formatTime(session.secondsElapsed);
-                cancelBtn.classList.add('hidden');
-                setStatusStyle(liveStatus, 'normal');
+                sendBtn.textContent = '↩ 追加';
+                stopBtn.classList.remove('hidden');
+                stopBtn.textContent = '■ 停止';
+                stopBtn.title = '停止分析，保留已生成内容';
+                stopBtn.onclick = () => stopSession(session.id);
             } else if (session.status === 'queued') {
                 statusCenter.classList.remove('hidden');
                 statusCenter.classList.add('flex');
                 liveStatus.innerText = '排队中';
                 liveTimer.innerText = '00:00';
-                cancelBtn.classList.remove('hidden');
-                cancelBtn.onclick = () => { stopSession(session.id); };
                 setStatusStyle(liveStatus, 'normal');
+                sendBtn.textContent = '↩ 追加';
+                stopBtn.classList.remove('hidden');
+                stopBtn.textContent = '✕ 取消';
+                stopBtn.title = '取消排队';
+                stopBtn.onclick = () => stopSession(session.id);
+            } else if (session.status === 'complete') {
+                statusCenter.classList.remove('hidden');
+                statusCenter.classList.add('flex');
+                liveStatus.innerText = '合成完毕';
+                liveTimer.innerText = formatTime(session.secondsElapsed);
+                setStatusStyle(liveStatus, 'done');
+                sendBtn.textContent = 'IGNITE';
+                stopBtn.classList.add('hidden');
+            } else if (session.status === 'failed') {
+                statusCenter.classList.remove('hidden');
+                statusCenter.classList.add('flex');
+                liveStatus.innerText = '系统异常';
+                liveTimer.innerText = formatTime(session.secondsElapsed);
+                setStatusStyle(liveStatus, 'normal');
+                sendBtn.textContent = 'IGNITE';
+                stopBtn.classList.add('hidden');
             } else if (session.status === 'empty') {
                 statusCenter.classList.remove('hidden');
                 statusCenter.classList.add('flex');
                 liveStatus.innerText = '等待点火';
                 liveTimer.innerText = '00:00';
-                cancelBtn.classList.add('hidden');
                 setStatusStyle(liveStatus, 'normal');
+                sendBtn.textContent = 'IGNITE';
+                stopBtn.classList.add('hidden');
             } else {
                 statusCenter.classList.add('hidden');
-                cancelBtn.classList.add('hidden');
+                sendBtn.textContent = 'IGNITE';
+                stopBtn.classList.add('hidden');
             }
         }
 
@@ -1810,7 +1824,7 @@
                 } catch(e) {}
             }
             if (recovered > 0) {
-                showToast(`已恢复 ${recovered} 条临时备份到档案库`);
+                showToast(`已恢复 ${recovered} 条临时备份到档案库`, 3000);
                 loadVaultHistory();
             }
         }
@@ -2151,7 +2165,7 @@
             // Try to write to vault
             try {
                 if (!(await verifyPermission(vaultHandle, true))) {
-                    showToast('档案库权限未授权 — 数据已临时备份到浏览器，请点击 ☰ 档案库 恢复权限');
+                    showToast('档案库权限未授权 — 数据已临时备份到浏览器，请点击 ☰ 档案库 恢复权限', 4000);
                     return;
                 }
                 const dir = await getSessionsDir();
@@ -2168,7 +2182,7 @@
                 buildMemoryEntry(session).catch(() => {});
             } catch(e) {
                 console.error("Save failed", e);
-                showToast('档案库保存失败 — 数据已临时备份到浏览器');
+                showToast('档案库保存失败 — 数据已临时备份到浏览器', 3500);
             }
         }
 
@@ -2224,12 +2238,12 @@
             document.getElementById('maxConcurrency').value = sessionManager.maxConcurrency.toString();
         }
 
-        function showToast(msg) {
+        function showToast(msg, duration = 2000) {
             const t = document.createElement('div');
             t.textContent = msg;
             t.style.cssText = 'position:fixed;top:24px;left:50%;transform:translateX(-50%);background:#1a1a1a;color:#aaa;border:1px solid #333;padding:8px 16px;border-radius:8px;font-size:11px;z-index:9999;transition:opacity 0.4s;';
             document.body.appendChild(t);
-            setTimeout(() => { t.style.opacity = '0'; setTimeout(() => t.remove(), 400); }, 1800);
+            setTimeout(() => { t.style.opacity = '0'; setTimeout(() => t.remove(), 400); }, duration);
         }
 
         function saveSettings() {
@@ -2315,7 +2329,7 @@
                     body: JSON.stringify({ model, messages: [{ role: 'user', content: 'hi' }], max_tokens: 1, stream: false })
                 });
                 showToast(res.ok || res.status === 400 ? `✅ 连接正常 (${res.status})` : `❌ 错误 ${res.status}`);
-            } catch(e) { showToast('❌ 连接失败: ' + e.message); }
+            } catch(e) { showToast('❌ 连接失败: ' + e.message, 3000); }
             finally { btn.textContent = '⚡ 测试'; btn.disabled = false; }
         };
 
@@ -2616,7 +2630,7 @@
                         session.data.last_synthesis = result;
                         renderSynthesisAsBlocks(session, result, inputs.runId, {});
                         showToast(`已用 ${model} 重新生成`);
-                    } catch(err) { showToast('重新生成失败: ' + err.message); }
+                    } catch(err) { showToast('重新生成失败: ' + err.message, 3000); }
                     finally { e.target.disabled = false; e.target.textContent = '🔄 重新生成'; }
                 })();
             }
@@ -2813,7 +2827,7 @@
                         const lastFile = await existing[0].getFile();
                         const lastContent = await lastFile.text();
                         if (lastContent === content) {
-                            showToast('内容无变化，跳过导出');
+                            showToast('内容相同，已跳过导出');
                             return;
                         }
                     } catch(e) {}
@@ -2828,7 +2842,7 @@
                 const fh = await dir.getFileHandle(filename, { create: true });
                 const w = await fh.createWritable(); await w.write(content); await w.close();
                 showToast(`已导出 exports/${filename}`);
-            } catch(e) { showToast('导出失败: ' + e.message); }
+            } catch(e) { showToast('导出失败: ' + e.message, 3000); }
         }
 
         document.getElementById('exportFullBtn').onclick = async () => {
@@ -2865,7 +2879,7 @@
             // Dedup: skip LLM if source material unchanged since last export
             const c = collectSessionContent(session);
             const sourceHash = hashStr(c.syntheses.join('|') + c.questions.join('|'));
-            if (session._lastStructHash === sourceHash) { showToast('源内容无变化，无需重新生成'); return; }
+            if (session._lastStructHash === sourceHash) { showToast('内容未更新，已跳过重新生成'); return; }
             const writerModel = config.models.writer || 'claude-sonnet-4-6';
             const btn = document.getElementById('exportStructBtn');
             btn.disabled = true; btn.textContent = '⏳ 生成中...';
@@ -2882,7 +2896,7 @@
 - 输出纯 Markdown`, input);
                 await exportToVault(result, makeExportFilename(session, '归档'));
                 session._lastStructHash = sourceHash;
-            } catch(e) { showToast('生成失败: ' + e.message); }
+            } catch(e) { showToast('生成失败: ' + e.message, 3000); }
             finally { btn.disabled = false; btn.textContent = '📋 结构化归档'; }
         };
 
@@ -2892,7 +2906,7 @@
             // Dedup: skip LLM if source material unchanged since last export
             const c = collectSessionContent(session);
             const sourceHash = hashStr(c.syntheses.join('|') + c.questions.join('|'));
-            if (session._lastPresentHash === sourceHash) { showToast('源内容无变化，无需重新生成'); return; }
+            if (session._lastPresentHash === sourceHash) { showToast('内容未更新，已跳过重新生成'); return; }
             const writerModel = config.models.writer || 'claude-sonnet-4-6';
             const btn = document.getElementById('exportPresentBtn');
             btn.disabled = true;
@@ -2930,7 +2944,7 @@
                 if (win) win.addEventListener('load', () => setTimeout(() => URL.revokeObjectURL(blobUrl), 1000));
                 else URL.revokeObjectURL(blobUrl);
                 session._lastPresentHash = sourceHash;
-            } catch(e) { showToast('生成失败: ' + e.message); }
+            } catch(e) { showToast('生成失败: ' + e.message, 3000); }
             finally { clearInterval(genTimer); btn.disabled = false; btn.textContent = '🎬 生成 HTML 演示'; }
         };
 
@@ -3010,7 +3024,7 @@
         // First-time setup: auto-open settings if no API key configured
         if (!config.apiKey) {
             document.getElementById('settingsPanel').classList.add('open');
-            showToast('首次使用，请先配置 API 地址和 Key');
+            showToast('首次使用，请先配置 API 地址和 Key', 3500);
         }
     </script>
 </body>
