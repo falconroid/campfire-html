@@ -21,7 +21,7 @@
 |------|----------|------|
 | Mind 1 (α) | claude-opus-4-6 | 分析者 A |
 | Mind 2 (β) | gpt-5.4 | 分析者 B |
-| Scan | kimi-k2.5 | 差异分析 |
+| Scan | claude-sonnet-4-6 | 差异分析 |
 | Synthesis | gemini-3.1-pro-preview | 综合结论 |
 | Search | gpt-5.4 | 联网搜索（可选） |
 | Writer | claude-sonnet-4-6 | 导出内容生成 |
