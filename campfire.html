@@ -2272,7 +2272,13 @@
 
         function updatePresentBtnState(session) {
             const btn = document.getElementById('exportPresentBtn');
-            if (!btn || btn.disabled) return;
+            if (!btn) return;
+            if (session?._presentGenerating) {
+                btn.disabled = true;
+                btn.textContent = `⏳ HTML 生成中… ${session._presentGenSecs || 0}s`;
+                return;
+            }
+            btn.disabled = false;
             if (!session?.data?.blocks?.length) return;
             const c = collectSessionContent(session);
             const currentHash = hashStr(c.syntheses.join('|') + c.questions.join('|'));
@@ -2948,6 +2954,7 @@
         document.getElementById('exportPresentBtn').onclick = async (e) => {
             const session = getActiveSession();
             if (!session?.data?.last_synthesis) return showToast('暂无分析结论');
+            if (session._presentGenerating) return;
             const c = collectSessionContent(session);
             const sourceHash = hashStr(c.syntheses.join('|') + c.questions.join('|'));
 
@@ -2958,11 +2965,13 @@
             }
 
             const writerModel = config.models.writer || 'claude-sonnet-4-6';
-            const btn = document.getElementById('exportPresentBtn');
-            btn.disabled = true;
-            let genSecs = 0;
-            btn.textContent = `⏳ HTML 生成中… 0s`;
-            const genTimer = setInterval(() => { genSecs++; btn.textContent = `⏳ HTML 生成中… ${genSecs}s`; }, 1000);
+            session._presentGenerating = true;
+            session._presentGenSecs = 0;
+            updatePresentBtnState(session);
+            const genTimer = setInterval(() => {
+                session._presentGenSecs++;
+                if (getActiveSession()?.id === session.id) updatePresentBtnState(session);
+            }, 1000);
             try {
                 const input = `标题: ${c.title}\n日期: ${c.date}\n分析指标: ${c.metrics}\n\n原始问题 (按时间顺序):\n${c.questions.join('\n---\n')}\n\n各轮综合结论 (后面的结论经过更多轮辩论，置信度更高):\n${c.syntheses.join('\n\n===\n\n')}`;
                 const html = await callModelSync(writerModel,
@@ -2991,8 +3000,8 @@
             } catch(e) { showToast('生成失败: ' + e.message, 3000); }
             finally {
                 clearInterval(genTimer);
-                btn.disabled = false;
-                updatePresentBtnState(session);
+                session._presentGenerating = false;
+                updatePresentBtnState(getActiveSession());
             }
         };
 
