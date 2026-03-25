@@ -33,7 +33,7 @@
                 <div class="flex items-center gap-3 mb-3">
                     <span class="text-3xl">🔥</span>
                     <h1 class="text-3xl font-black tracking-tight"><span class="gradient-text">Campfire</span></h1>
-                    <span class="text-xs text-gray-600 font-mono mt-1">v6.6</span>
+                    <span class="text-xs text-gray-600 font-mono mt-1">v6.7</span>
                 </div>
                 <p class="text-2xl md:text-3xl font-black text-white leading-snug">让盲区暴露在决策之前</p>
                 <p class="text-sm text-gray-500 mt-2">多模型对比分析引擎 — 你的判断值得被挑战</p>
@@ -199,7 +199,7 @@
                             <span class="bg-gray-900 text-gray-500 px-2 py-1 rounded font-bold">&#9776; 档案库</span>
                             <span class="bg-orange-900/30 text-orange-500 px-2 py-1 rounded font-bold">+ New</span>
                             <span class="text-xl">🔥</span>
-                            <span class="font-black text-white text-sm tracking-widest">CAMPFIRE <span class="text-orange-600">v6.6</span></span>
+                            <span class="font-black text-white text-sm tracking-widest">CAMPFIRE <span class="text-orange-600">v6.7</span></span>
                         </div>
                         <div class="flex items-center gap-2">
                             <span class="bg-orange-900/20 text-orange-500 px-3 py-1 rounded-l font-bold">对比分析 R2/3</span>
@@ -364,6 +364,20 @@
                     </h3>
                     <p class="text-sm text-gray-500 leading-relaxed">需要实时数据？开启联网后，两个 Mind 各自独立搜索，避免单一搜索结果的偏见。搜索结果自动注入分析上下文。</p>
                 </div>
+                <div class="card rounded-xl p-6 transition">
+                    <h3 class="font-bold text-white mb-3 flex items-center gap-2">
+                        <span class="w-6 h-6 bg-purple-900/30 rounded flex items-center justify-center text-purple-400 text-xs">🎬</span>
+                        智能导出
+                    </h3>
+                    <p class="text-sm text-gray-500 leading-relaxed">一键生成结构化分析报告或专业演示页面。AI 自动整理多轮结论、去重合并、加权后期内容。导出自动版本管理，防止误触重复调用。</p>
+                </div>
+                <div class="card rounded-xl p-6 transition">
+                    <h3 class="font-bold text-white mb-3 flex items-center gap-2">
+                        <span class="w-6 h-6 bg-red-900/30 rounded flex items-center justify-center text-red-400 text-xs">📎</span>
+                        文件附件
+                    </h3>
+                    <p class="text-sm text-gray-500 leading-relaxed">拖拽或选择文件附加到分析中。文件自动归档到档案库，下次可直接从历史中选择，不用重复上传。</p>
+                </div>
             </div>
         </div>
     </section>
@@ -449,12 +463,14 @@
                     <div class="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-4">档案库结构</div>
                     <div class="font-mono text-xs text-gray-400 space-y-1.5">
                         <div class="text-orange-500">vault/</div>
-                        <div class="pl-4 text-white">config.json <span class="text-gray-600">-- API + 提示词配置</span></div>
-                        <div class="pl-4 text-white">memory.json <span class="text-gray-600">-- 跨对话记忆索引</span></div>
+                        <div class="pl-4 text-white">config.json <span class="text-gray-600">-- 配置</span></div>
+                        <div class="pl-4 text-white">memory.json <span class="text-gray-600">-- 记忆索引</span></div>
                         <div class="pl-4 text-orange-500">sessions/</div>
-                        <div class="pl-8 text-gray-500">Campfire_170xxx.json</div>
-                        <div class="pl-8 text-gray-500">Campfire_170xxx.json</div>
-                        <div class="pl-8 text-gray-600">...</div>
+                        <div class="pl-8 text-gray-500">Campfire_*.json</div>
+                        <div class="pl-4 text-orange-500">exports/</div>
+                        <div class="pl-8 text-gray-500">*_归档.md, *_演示.html</div>
+                        <div class="pl-4 text-orange-500">files/</div>
+                        <div class="pl-8 text-gray-500">附件归档</div>
                     </div>
                     <div class="mt-4 pt-4 border-t border-gray-800 text-[10px] text-gray-600">
                         拷贝整个文件夹即可完整迁移到另一台电脑
@@ -487,7 +503,7 @@
     <!-- Footer -->
     <footer class="py-8 px-6 border-t border-gray-900">
         <div class="max-w-4xl mx-auto flex justify-between items-center text-[11px] text-gray-700">
-            <span>Campfire Cockpit v6.6</span>
+            <span>Campfire Cockpit v6.7</span>
             <span>纯前端 &middot; 零依赖 &middot; 数据本地</span>
         </div>
     </footer>

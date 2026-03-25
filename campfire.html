@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>Campfire Cockpit v6.6</title>
+    <title>Campfire Cockpit v6.7</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <style>
@@ -52,7 +52,7 @@
         .session-tab.interrupted { background: #1a1000; color: #f59e0b; }
         .session-tab .tab-badge { font-size: 9px; font-weight: 700; opacity: 0.7; }
         .session-tab .tab-title { font-size: 10px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: inherit; }
-        .session-tab .tab-timer { font-size: 9px; font-family: ui-monospace, monospace; opacity: 0.5; }
+        .session-tab .tab-timer { font-size: 10px; font-family: ui-monospace, monospace; opacity: 0.6; }
         .session-tab.queued .tab-badge { color: #999; }
         .session-tab.running .tab-badge { color: #F97316; }
         .session-tab.complete .tab-badge { color: #22c55e; }
@@ -168,7 +168,7 @@
             </button>
             <div class="flex items-center gap-2 border-l border-gray-800 pl-4 ml-2">
                 <span id="logoIcon" class="text-2xl animate-pulse text-orange-600">🔥</span>
-                <h1 class="text-xl font-black tracking-tighter text-white uppercase hidden xl:block tracking-widest">Campfire <span class="text-orange-600">v6.6</span></h1>
+                <h1 class="text-xl font-black tracking-tighter text-white uppercase hidden xl:block tracking-widest">Campfire <span class="text-orange-600">v6.7</span></h1>
             </div>
         </div>
 
@@ -253,9 +253,18 @@
                 <!-- Session render containers inserted here dynamically -->
             </div>
 
-            <!-- Export button -->
-            <div id="sessionExportBtns" class="shrink-0 px-2">
-                <button id="exportFullBtn" class="w-full bg-gray-800 hover:bg-gray-700 py-3 rounded-lg text-xs font-bold transition text-gray-300 border border-gray-700">📚 导出完整对话</button>
+            <!-- Pending follow-up bar -->
+            <div id="pendingBar" class="hidden shrink-0 mx-2 px-3 py-2 bg-yellow-900/10 border border-yellow-800/50 rounded-lg flex items-center gap-2">
+                <span class="text-yellow-500 text-xs shrink-0">📝</span>
+                <input type="text" id="pendingInput" class="flex-grow bg-transparent border-none outline-none text-[11px] text-yellow-400/90 placeholder-yellow-800" placeholder="待处理追问...">
+                <button id="pendingCancelBtn" class="text-[10px] text-gray-600 hover:text-red-400 shrink-0 transition" title="取消">✕</button>
+            </div>
+
+            <!-- Export buttons -->
+            <div id="sessionExportBtns" class="flex gap-1.5 shrink-0 px-2">
+                <button id="exportFullBtn" class="flex-1 bg-gray-800 hover:bg-gray-700 py-2.5 rounded-lg text-[10px] font-bold transition text-gray-400 border border-gray-700">📚 导出对话</button>
+                <button id="exportStructBtn" class="flex-1 bg-gray-800 hover:bg-gray-700 py-2.5 rounded-lg text-[10px] font-bold transition text-gray-400 border border-gray-700">📋 结构化归档</button>
+                <button id="exportPresentBtn" class="flex-1 bg-gray-800 hover:bg-gray-700 py-2.5 rounded-lg text-[10px] font-bold transition text-gray-400 border border-gray-700">🎬 生成演示</button>
             </div>
         </section>
     </main>
@@ -308,6 +317,7 @@
                     <div><label>Mind 2 ID</label><input type="text" id="modelBeta" list="modelList" class="w-full bg-black border border-gray-800 p-2 rounded"></div>
                     <div><label>Scan ID</label><input type="text" id="modelScan" list="modelList" class="w-full bg-black border border-gray-800 p-2 rounded"></div>
                     <div><label>Synthesis ID</label><input type="text" id="modelJudge" list="modelList" class="w-full bg-black border border-gray-800 p-2 rounded"></div>
+                    <div><label>Writer ID</label><input type="text" id="modelWriter" list="modelList" class="w-full bg-black border border-gray-800 p-2 rounded text-purple-300"></div>
                 </div>
                 <!-- Web search model config -->
                 <div class="mt-3 pt-3 border-t border-gray-800">
@@ -425,7 +435,8 @@
                 beta: 'gpt-5.4',
                 scan: 'kimi-k2.5',
                 judge: 'gemini-3.1-pro-preview',
-                search: 'gpt-5.4'
+                search: 'gpt-5.4',
+                writer: 'claude-sonnet-4-6'
             },
             searchEnabled: false
         };
@@ -595,10 +606,17 @@
                     badge.textContent = getStatusIcon(session.status);
                 }
             }
-            // Update timer
+            // Update timer + save status
             const timer = tab.querySelector('.tab-timer');
             if (timer) {
-                timer.textContent = (session.status === 'running' || session.status === 'complete' || session.status === 'failed' || session.status === 'interrupted') ? formatTime(session.secondsElapsed || 0) : '';
+                if (session.status === 'running' || session.status === 'complete' || session.status === 'failed' || session.status === 'interrupted') {
+                    const time = formatTime(session.secondsElapsed || 0);
+                    timer.textContent = session._savedToVault ? `${time} · 已存档` : time;
+                    timer.style.color = session._savedToVault ? '#22c55e' : '';
+                } else {
+                    timer.textContent = '';
+                    timer.style.color = '';
+                }
             }
         }
 
@@ -623,6 +641,8 @@
                 updateHeaderForSession(session);
                 // Update metrics bar
                 updateMetricsForSession(session);
+                // Update pending bar
+                updatePendingBar(session);
             }
         }
 
@@ -740,7 +760,9 @@
             const container = session.renderContainerEl;
             const wMsg = container.querySelector('.welcome-msg');
             if (wMsg) wMsg.remove();
-            const msgHtml = `<div class="user-msg-block mb-6 ml-12" data-session-id="${session.id}"><div class="flex justify-between items-center mb-1"><span class="text-orange-500 text-[10px] font-bold uppercase tracking-widest">>>> 提问</span><button class="edit-question-btn text-[10px] text-gray-600 hover:text-orange-400 transition" data-original="${escapeHtml(text)}">✏️ 编辑重跑</button></div><div class="bg-gray-900 border border-gray-800 p-4 rounded-lg rounded-tr-none text-gray-300 text-sm whitespace-pre-wrap">${escapeHtml(text)}</div></div>`;
+            const msgId = `umsg_${session.id}_${Date.now()}`;
+            _logPinTextStore.set(msgId, text);
+            const msgHtml = `<div class="user-msg-block mb-6 ml-12" data-session-id="${session.id}"><div class="flex justify-between items-center mb-1"><span class="text-orange-500 text-[10px] font-bold uppercase tracking-widest">>>> 提问</span><button class="edit-question-btn text-[10px] text-gray-600 hover:text-orange-400 transition" data-msg-id="${msgId}">✏️ 编辑重跑</button></div><div class="bg-gray-900 border border-gray-800 p-4 rounded-lg rounded-tr-none text-gray-300 text-sm whitespace-pre-wrap">${escapeHtml(text)}</div></div>`;
             container.innerHTML += msgHtml;
             container.scrollTop = container.scrollHeight;
         }
@@ -852,7 +874,7 @@
                 inputArea.value = '';
                 localStorage.removeItem('campfire_input_draft');
                 showToast('已排队，当前分析完成后自动继续');
-                appendToLogWithSmartScroll(session, `<p class="text-gray-500 mt-2 text-[10px] border border-gray-800 rounded p-2 bg-gray-900/50">📝 待处理追问: ${escapeHtml(userInput.substring(0, 60))}${userInput.length > 60 ? '...' : ''}</p>`);
+                updatePendingBar(session);
                 return;
             } else if (!session || session.status === 'failed' || session.status === 'interrupted') {
                 // No active session or it's in a non-reusable state — create new
@@ -1108,6 +1130,7 @@
                             ]);
                             finalA = resA; finalB = resB;
                             session.data.lastMindOutputs = { alpha: resA, beta: resB };
+                            saveSessionIncremental(session);
                             injectPinButtonsForRound(session, r, 'mind1', finalA, runId, idA);
                             injectPinButtonsForRound(session, r, 'mind2', finalB, runId, idB);
                             collapseStreamBox(document.getElementById(idA), finalA.length);
@@ -1123,6 +1146,7 @@
                         injectPinButtonsForRound(session, r, 'scan', scanReport, runId, idS);
                         collapseStreamBox(document.getElementById(idS), scanReport.length);
                         session.data.lastScanReport = scanReport;
+                        saveSessionIncremental(session);
 
                         const scoreMatch = scanReport.match(/\[分歧度评分:\s*(\d+)\/10\]/);
                         finalEntropy = scoreMatch ? parseInt(scoreMatch[1]) : 10;
@@ -1170,6 +1194,7 @@
                     session.data.last_synthesis = synthesis;
                     session.data.rawMarkdownMap[runId] = synthesis;
                     session.data.full_conversation += `### 问题\n${userInput}\n\n### 综合结论\n${synthesis}\n\n---\n\n`;
+                    saveSessionIncremental(session);
                     session.data.blocks.push({ type: 'synthesis', runId, isSimple: false, markdown: synthesis });
                     renderSynthesisAsBlocks(session, synthesis, runId, { sessionTitle: session.title, rounds: actualRounds, model: 'synthesis', type: 'campfire' });
 
@@ -1184,6 +1209,7 @@
                 session._checkpoint = null;
                 await saveSessionToVault(session);
                 session._savedToVault = true;
+                updateTabState(session);
             } catch (err) {
                 if (err.name === 'AbortError') {
                     if (session._userStopped) {
@@ -1222,6 +1248,7 @@
                 if (session._pendingFollowUp && (session.status === 'complete')) {
                     const followUp = session._pendingFollowUp;
                     session._pendingFollowUp = null;
+                    updatePendingBar(session);
                     session.userInput = followUp;
                     startSession(session.id);
                 }
@@ -1321,6 +1348,7 @@
                     session.data.last_synthesis = finalSingle;
                     session.data.rawMarkdownMap[runId] = finalSingle;
                     session.data.full_conversation += `### 意图输入\n${userInput}\n\n### 极简输出\n${finalSingle}\n\n---\n\n`;
+                    saveSessionIncremental(session);
                     session.data.blocks.push({ type: 'synthesis', runId, isSimple: true, markdown: finalSingle });
 
                     // Render synthesis as pinnable blocks
@@ -1405,6 +1433,7 @@
                         // Collapse scan stream box
                         collapseStreamBox(document.getElementById(idS), scanReport.length);
                         session.data.lastScanReport = scanReport;
+                        saveSessionIncremental(session);
 
                         const scoreMatch = scanReport.match(/\[分歧度评分:\s*(\d+)\/10\]/);
                         finalEntropy = scoreMatch ? parseInt(scoreMatch[1]) : 10;
@@ -1455,6 +1484,7 @@
                     session.data.last_synthesis = synthesis;
                     session.data.rawMarkdownMap[runId] = synthesis;
                     session.data.full_conversation += `### 问题\n${userInput}\n\n### 综合结论\n${synthesis}\n\n---\n\n`;
+                    saveSessionIncremental(session);
                     session.data.blocks.push({ type: 'synthesis', runId, isSimple: false, markdown: synthesis });
 
                     // Render synthesis as pinnable blocks
@@ -1472,6 +1502,7 @@
                 session._checkpoint = null;
                 await saveSessionToVault(session);
                 session._savedToVault = true;
+                updateTabState(session);
 
             } catch (err) {
                 if (err.name === 'AbortError') {
@@ -1578,11 +1609,20 @@
 
             targetEl.innerHTML = html;
 
-            // Show action buttons now that synthesis is complete
+            // Show action buttons + completion indicator
             const wrap = document.getElementById(`wrap_${session.id}_${runId}`);
             if (wrap) {
                 const actions = wrap.querySelector('.synthesis-actions');
                 if (actions) actions.style.display = '';
+                // Flash completion badge on title line
+                const titleSpan = wrap.querySelector('span:first-child');
+                if (titleSpan && !titleSpan.querySelector('.done-badge')) {
+                    titleSpan.insertAdjacentHTML('beforeend', ' <span class="done-badge text-green-500 text-[9px] opacity-0 transition-opacity duration-500">✓ 完成</span>');
+                    requestAnimationFrame(() => {
+                        const badge = titleSpan.querySelector('.done-badge');
+                        if (badge) badge.style.opacity = '1';
+                    });
+                }
             }
         }
 
@@ -1729,8 +1769,38 @@
                 updateVaultStatus(true);
                 loadVaultHistory();
                 loadMemoryIndex();
+                recoverBackups();
             } catch (err) {
                 if(err.name !== 'AbortError') alert("挂载中止或失败。\n" + err.message);
+            }
+        }
+
+        async function recoverBackups() {
+            const keys = [];
+            for (let i = 0; i < localStorage.length; i++) {
+                const k = localStorage.key(i);
+                if (k.startsWith('campfire_backup_')) keys.push(k);
+            }
+            if (keys.length === 0) return;
+            const dir = await getSessionsDir();
+            if (!dir) return;
+            let recovered = 0;
+            for (const key of keys) {
+                try {
+                    const data = JSON.parse(localStorage.getItem(key));
+                    if (!data.id) continue;
+                    const filename = `Campfire_${data.id}.json`;
+                    const fh = await dir.getFileHandle(filename, { create: true });
+                    const w = await fh.createWritable();
+                    await w.write(JSON.stringify(data, null, 2));
+                    await w.close();
+                    localStorage.removeItem(key);
+                    recovered++;
+                } catch(e) {}
+            }
+            if (recovered > 0) {
+                showToast(`已恢复 ${recovered} 条临时备份到档案库`);
+                loadVaultHistory();
             }
         }
 
@@ -1762,7 +1832,7 @@
                 settingStatus.classList.add('cursor-pointer', 'hover:text-purple-300', 'transition');
                 const verifyLogic = async () => {
                     if(await verifyPermission(vaultHandle, true)) {
-                        await initVaultStructure(); updateVaultStatus(true); loadVaultHistory(); loadMemoryIndex();
+                        await initVaultStructure(); updateVaultStatus(true); loadVaultHistory(); loadMemoryIndex(); recoverBackups();
                     }
                 };
                 settingStatus.onclick = verifyLogic;
@@ -2053,19 +2123,40 @@
         }
 
         // v6.0: saveSessionToVault takes a session parameter
+        // Fast incremental save — localStorage only, no permission needed, called after each step
+        function saveSessionIncremental(session) {
+            if (!session?.data?.id) return;
+            try { localStorage.setItem(`campfire_backup_${session.data.id}`, JSON.stringify(session.data)); } catch(e) {}
+        }
+
         async function saveSessionToVault(session) {
-            if (!vaultHandle || !session.data.id) return;
-            const filename = `Campfire_${session.data.id}.json`;
+            if (!session.data.id) return;
+            // Emergency backup to localStorage (always works, no permission needed)
+            try { localStorage.setItem(`campfire_backup_${session.data.id}`, JSON.stringify(session.data)); } catch(e) {}
+
+            if (!vaultHandle) return;
+            // Try to write to vault
             try {
+                if (!(await verifyPermission(vaultHandle, true))) {
+                    showToast('档案库权限未授权 — 数据已临时备份到浏览器，请点击 ☰ 档案库 恢复权限');
+                    return;
+                }
                 const dir = await getSessionsDir();
+                if (!dir) { showToast('无法访问 sessions 目录'); return; }
+                const filename = `Campfire_${session.data.id}.json`;
                 const fileHandle = await dir.getFileHandle(filename, { create: true });
                 const writable = await fileHandle.createWritable();
                 await writable.write(JSON.stringify(session.data, null, 2));
                 await writable.close();
+                // Vault save succeeded, remove emergency backup
+                localStorage.removeItem(`campfire_backup_${session.data.id}`);
                 loadVaultHistoryDebounced();
                 showToast('已保存到档案库');
                 buildMemoryEntry(session).catch(() => {});
-            } catch(e) { console.error("Save failed", e); showToast('档案库保存失败'); }
+            } catch(e) {
+                console.error("Save failed", e);
+                showToast('档案库保存失败 — 数据已临时备份到浏览器');
+            }
         }
 
         // ==========================================
@@ -2112,6 +2203,7 @@
             document.getElementById('modelScan').value = config?.models?.scan || '';
             document.getElementById('modelJudge').value = config?.models?.judge || '';
             document.getElementById('modelSearch').value = config?.models?.search || '';
+            document.getElementById('modelWriter').value = config?.models?.writer || '';
             updateSearchChip();
             document.getElementById('promptAlpha').value = directives?.alpha || '';
             document.getElementById('promptScan').value = directives?.scan || '';
@@ -2136,7 +2228,8 @@
                     beta: document.getElementById('modelBeta').value.trim(),
                     scan: document.getElementById('modelScan').value.trim(),
                     judge: document.getElementById('modelJudge').value.trim(),
-                    search: document.getElementById('modelSearch').value.trim()
+                    search: document.getElementById('modelSearch').value.trim(),
+                    writer: document.getElementById('modelWriter').value.trim()
                 },
                 searchEnabled: config.searchEnabled,
                 vaultName: vaultHandle ? vaultHandle.name : null
@@ -2403,10 +2496,9 @@
         document.getElementById('sessionRenderHost').addEventListener('click', async (e) => {
             // Edit question & re-run
             if (e.target.classList.contains('edit-question-btn')) {
-                const sessionId = e.target.closest('.user-msg-block')?.getAttribute('data-session-id');
-                const session = sessionManager.sessions.get(sessionId);
-                if (!session || session.status === 'running') return;
-                const original = e.target.getAttribute('data-original');
+                const msgId = e.target.getAttribute('data-msg-id');
+                const original = _logPinTextStore.get(msgId) || '';
+                if (!original) return;
                 const inp = document.getElementById('userInput');
                 inp.value = original;
                 inp.focus();
@@ -2605,32 +2697,91 @@
             return files.sort();
         }
 
+        // Pending follow-up bar
+        function updatePendingBar(session) {
+            const bar = document.getElementById('pendingBar');
+            const input = document.getElementById('pendingInput');
+            if (session?._pendingFollowUp) {
+                input.value = session._pendingFollowUp;
+                bar.classList.remove('hidden');
+            } else {
+                input.value = '';
+                bar.classList.add('hidden');
+            }
+        }
+        // Sync edits back to session in real-time
+        document.getElementById('pendingInput').addEventListener('input', () => {
+            const session = getActiveSession();
+            if (session) session._pendingFollowUp = document.getElementById('pendingInput').value;
+        });
+        document.getElementById('pendingCancelBtn').onclick = () => {
+            const session = getActiveSession();
+            if (session) {
+                session._pendingFollowUp = null;
+                updatePendingBar(session);
+                showToast('已取消排队追问');
+            }
+        };
+
         async function getExportsDir() {
             if (!vaultHandle) return null;
             try { return await vaultHandle.getDirectoryHandle('exports', { create: true }); }
             catch(e) { return null; }
         }
 
-        function makeExportFilename(session, type) {
-            const title = (session.title || '未命名').replace(/[\\/:*?"<>|]/g, '_').substring(0, 30);
-            const date = new Date().toISOString().slice(0, 10);
-            return `${date}_${title}_${type}.md`;
+        // Simple string hash for dedup
+        function hashStr(s) {
+            let h = 0;
+            for (let i = 0; i < s.length; i++) { h = ((h << 5) - h + s.charCodeAt(i)) | 0; }
+            return h.toString(36);
         }
 
-        async function exportToVault(content, filename) {
+        function makeExportFilename(session, type, ext) {
+            const title = (session.title || '未命名').replace(/[\\/:*?"<>|]/g, '_').substring(0, 30);
+            const date = new Date().toISOString().slice(0, 10);
+            return `${date}_${title}_${type}.${ext || 'md'}`;
+        }
+
+        async function exportToVault(content, baseFilename) {
             const dir = await getExportsDir();
             if (!dir) {
-                // Vault not mounted, fall back to file picker
                 try {
-                    const h = await window.showSaveFilePicker({ suggestedName: filename, types: [{ accept: { 'text/markdown': ['.md'] } }] });
+                    const h = await window.showSaveFilePicker({ suggestedName: baseFilename, types: [{ accept: { 'text/markdown': ['.md'] } }] });
                     const w = await h.createWritable(); await w.write(content); await w.close();
                 } catch(e) { if(e.name !== 'AbortError') showToast('导出失败'); }
                 return;
             }
             try {
+                // Check for existing versions, find next version number
+                const ext = baseFilename.includes('.') ? baseFilename.split('.').pop() : 'md';
+                const base = baseFilename.replace(/\.[^.]+$/, '');
+                let version = 1;
+                const existing = [];
+                for await (const entry of dir.values()) {
+                    if (entry.kind === 'file' && entry.name.startsWith(base)) existing.push(entry);
+                }
+                // Check if latest existing file has identical content
+                if (existing.length > 0) {
+                    existing.sort((a, b) => b.name.localeCompare(a.name));
+                    try {
+                        const lastFile = await existing[0].getFile();
+                        const lastContent = await lastFile.text();
+                        if (lastContent === content) {
+                            showToast('内容无变化，跳过导出');
+                            return;
+                        }
+                    } catch(e) {}
+                    // Find next version
+                    for (const e of existing) {
+                        const vMatch = e.name.match(/_v(\d+)\./);
+                        if (vMatch) version = Math.max(version, parseInt(vMatch[1]) + 1);
+                        else version = Math.max(version, 2); // first file has no _v, next is _v2
+                    }
+                }
+                const filename = existing.length === 0 ? baseFilename : `${base}_v${version}.${ext}`;
                 const fh = await dir.getFileHandle(filename, { create: true });
                 const w = await fh.createWritable(); await w.write(content); await w.close();
-                showToast(`已导出到 exports/${filename}`);
+                showToast(`已导出 exports/${filename}`);
             } catch(e) { showToast('导出失败: ' + e.message); }
         }
 
@@ -2639,6 +2790,94 @@
             const md = session?.data?.full_conversation;
             if(!md || md === "# Campfire 推演账本\n\n") return showToast('暂无对话记录');
             await exportToVault(md, makeExportFilename(session, '全文'));
+        };
+
+        // Collect session content for smart export
+        function collectSessionContent(session) {
+            const questions = session.data.blocks.filter(b => b.type === 'user').map(b => b.text);
+            const syntheses = session.data.blocks.filter(b => b.type === 'synthesis').map(b => b.markdown);
+            const lastScan = session.data.lastScanReport || '';
+            const metrics = session._metrics?.text || '';
+            return { questions, syntheses, lastScan, metrics, title: session.title || '未命名', date: new Date().toLocaleDateString('zh-CN') };
+        }
+
+        // Non-streaming model call for export tasks
+        async function callModelSync(model, systemPrompt, userContent) {
+            const res = await fetch(`${(config?.baseUrl || '').replace(/\/+$/, '')}/chat/completions`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${config?.apiKey || ''}` },
+                body: JSON.stringify({ model, messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userContent }], temperature: 0.3, stream: false })
+            });
+            if (!res.ok) throw new Error(`API ${res.status}`);
+            const data = await res.json();
+            return data.choices?.[0]?.message?.content || '';
+        }
+
+        document.getElementById('exportStructBtn').onclick = async () => {
+            const session = getActiveSession();
+            if (!session?.data?.last_synthesis) return showToast('暂无分析结论');
+            // Dedup: skip LLM if source material unchanged since last export
+            const c = collectSessionContent(session);
+            const sourceHash = hashStr(c.syntheses.join('|') + c.questions.join('|'));
+            if (session._lastStructHash === sourceHash) { showToast('源内容无变化，无需重新生成'); return; }
+            const writerModel = config.models.writer || 'claude-sonnet-4-6';
+            const btn = document.getElementById('exportStructBtn');
+            btn.disabled = true; btn.textContent = '⏳ 生成中...';
+            try {
+                const input = `标题: ${c.title}\n日期: ${c.date}\n分析指标: ${c.metrics}\n\n原始问题:\n${c.questions.join('\n---\n')}\n\n各轮结论 (按时间顺序，后面的结论置信度更高):\n${c.syntheses.join('\n\n===\n\n')}`;
+                const result = await callModelSync(writerModel,
+                    `将以下多轮分析对话整理为一份结构化分析报告。
+
+要求：
+- 后面轮次的结论经过更多轮辩论，置信度更高，应给予更大权重
+- 去除过程性内容，只保留最终结论和关键发现
+- 合并重复观点，保留最完整的表述
+- 按以下结构组织：# 标题 / ## 分析背景 / ## 核心结论 / ## 关键洞见 / ## 遗留分歧（如有） / ## 分析方法
+- 输出纯 Markdown`, input);
+                await exportToVault(result, makeExportFilename(session, '归档'));
+                session._lastStructHash = sourceHash;
+            } catch(e) { showToast('生成失败: ' + e.message); }
+            finally { btn.disabled = false; btn.textContent = '📋 结构化归档'; }
+        };
+
+        document.getElementById('exportPresentBtn').onclick = async () => {
+            const session = getActiveSession();
+            if (!session?.data?.last_synthesis) return showToast('暂无分析结论');
+            // Dedup: skip LLM if source material unchanged since last export
+            const c = collectSessionContent(session);
+            const sourceHash = hashStr(c.syntheses.join('|') + c.questions.join('|'));
+            if (session._lastPresentHash === sourceHash) { showToast('源内容无变化，无需重新生成'); return; }
+            const writerModel = config.models.writer || 'claude-sonnet-4-6';
+            const btn = document.getElementById('exportPresentBtn');
+            btn.disabled = true; btn.textContent = '⏳ 生成中...';
+            try {
+                const c = collectSessionContent(session);
+                const input = `标题: ${c.title}\n分析指标: ${c.metrics}\n\n原始问题:\n${c.questions.join('\n---\n')}\n\n最终结论 (最后一轮，置信度最高):\n${c.syntheses[c.syntheses.length - 1] || c.syntheses.join('\n\n')}`;
+                const html = await callModelSync(writerModel,
+                    `将以下分析结论转化为一个专业的演示 HTML 页面。
+
+要求：
+- 完整独立的 HTML 文件，内联 CSS，不使用任何外部 CDN 或依赖
+- 深色专业主题（#0a0a0a 背景），适合投屏和屏幕分享
+- 清晰的视觉层次：大标题 → 核心结论（醒目）→ 关键洞见（卡片式）→ 遗留分歧（如有）
+- 每个要点简洁有力，像高管汇报幻灯片
+- 响应式布局，桌面和平板均可用
+- 页面底部小字注明：Campfire 多模型对比分析 · 日期 · 分析指标
+- 直接输出完整 HTML 代码，不要用 markdown 代码块包裹`, input);
+                // Save as HTML
+                const filename = makeExportFilename(session, '演示', 'html');
+                const dir = await getExportsDir();
+                if (dir) {
+                    const fh = await dir.getFileHandle(filename, { create: true });
+                    const w = await fh.createWritable(); await w.write(html); await w.close();
+                    showToast(`已导出到 exports/${filename}`);
+                }
+                // Preview in new tab
+                const blob = new Blob([html], { type: 'text/html' });
+                window.open(URL.createObjectURL(blob), '_blank');
+                session._lastPresentHash = sourceHash;
+            } catch(e) { showToast('生成失败: ' + e.message); }
+            finally { btn.disabled = false; btn.textContent = '🎬 生成演示'; }
         };
 
         // ==========================================
@@ -2701,6 +2940,14 @@
             document.getElementById('crucibleSection'),
             document.getElementById('rightPanel')
         );
+
+        // Warn before leaving if sessions are running
+        window.addEventListener('beforeunload', (e) => {
+            if (sessionManager.runningSessions.size > 0) {
+                e.preventDefault();
+                e.returnValue = '';
+            }
+        });
 
         // v6.0 Workspace model: create initial empty session on page load
         const initialSession = createSession('', true, 3, true);
