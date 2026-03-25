@@ -1855,9 +1855,18 @@
         async function autoMountOnLoad() {
             try {
                 const storedHandle = await idb.get('rootHandle');
-                if (storedHandle) {
-                    vaultHandle = storedHandle;
-                    updateVaultStatus(false, true);
+                if (!storedHandle) return;
+                vaultHandle = storedHandle;
+                // Try silent re-grant — queryPermission needs no user gesture
+                const perm = await storedHandle.queryPermission({ mode: 'readwrite' });
+                if (perm === 'granted') {
+                    await initVaultStructure();
+                    updateVaultStatus(true);
+                    loadVaultHistory();
+                    loadMemoryIndex();
+                    recoverBackups();
+                } else {
+                    updateVaultStatus(false, true); // prompt user on next gesture
                 }
             } catch(e) { console.warn("Auto-mount silently skipped."); }
         }
@@ -2519,14 +2528,16 @@
         const historyPanel = document.getElementById('historyPanel');
         document.getElementById('toggleHistory').onclick = async () => {
             historyPanel.classList.toggle('open');
-            // Auto-restore vault access on first user gesture if needed
-            if (vaultHandle && historyPanel.classList.contains('open')) {
-                if (await verifyPermission(vaultHandle, true)) {
-                    await initVaultStructure();
-                    updateVaultStatus(true);
-                    loadVaultHistory();
-                    loadMemoryIndex();
-                }
+            if (!vaultHandle || !historyPanel.classList.contains('open')) return;
+            // Already verified: just refresh history list
+            const perm = await vaultHandle.queryPermission({ mode: 'readwrite' });
+            if (perm === 'granted') { loadVaultHistory(); return; }
+            // Need user gesture to re-grant
+            if (await verifyPermission(vaultHandle, true)) {
+                await initVaultStructure();
+                updateVaultStatus(true);
+                loadVaultHistory();
+                loadMemoryIndex();
             }
         };
         document.getElementById('closeHistory').onclick = () => historyPanel.classList.remove('open');
