@@ -2836,7 +2836,10 @@
 
         async function getExportsDir() {
             if (!vaultHandle) return null;
-            try { return await vaultHandle.getDirectoryHandle('exports', { create: true }); }
+            try {
+                if (!(await verifyPermission(vaultHandle, true))) return null;
+                return await vaultHandle.getDirectoryHandle('exports', { create: true });
+            }
             catch(e) { return null; }
         }
 
